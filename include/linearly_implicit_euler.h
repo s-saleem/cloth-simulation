@@ -20,7 +20,27 @@ inline void linearly_implicit_euler(Eigen::VectorXd &q, Eigen::VectorXd &qdot, d
                             const Eigen::SparseMatrixd &mass,  FORCE &force, STIFFNESS &stiffness, 
                             Eigen::VectorXd &tmp_force, Eigen::SparseMatrixd &tmp_stiffness) {
     
+    force(tmp_force, q, qdot);
+    stiffness(tmp_stiffness, q, qdot);
+
+    std::cout << "force " << tmp_force.norm() << std::endl;
+    std::cout << "stiffness " << tmp_stiffness.norm() << std::endl;
+    std::cout << "qdot " << qdot.norm() << std::endl;
+    // exit(0);
+
+    Eigen::SparseMatrixd A = mass - dt*dt * tmp_stiffness;
+    Eigen::VectorXd b = mass * qdot + dt * tmp_force;
+
+    Eigen::SimplicialLLT<Eigen::SparseMatrixd> solver;
+    solver.compute(A);
+    if(solver.info() != Eigen::Success) {
+        std::cout << "failed factorize: " << solver.info() << std::endl;
+    }
     
+    qdot = solver.solve(b);
+    if(solver.info() != Eigen::Success) {
+        std::cout << "failed solve: " << solver.info() << std::endl;
+    }
 
-
+    q += qdot * dt;
 }
