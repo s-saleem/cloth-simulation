@@ -23,9 +23,9 @@ inline void linearly_implicit_euler(Eigen::VectorXd &q, Eigen::VectorXd &qdot, d
     force(tmp_force, q, qdot);
     stiffness(tmp_stiffness, q, qdot);
 
-    std::cout << "force " << tmp_force.norm() << std::endl;
-    std::cout << "stiffness " << tmp_stiffness.norm() << std::endl;
-    std::cout << "qdot " << qdot.norm() << std::endl;
+    // std::cout << "force " << tmp_force.norm() << std::endl;
+    // std::cout << "stiffness " << tmp_stiffness.norm() << std::endl;
+    // std::cout << "qdot " << qdot.norm() << std::endl;
     // exit(0);
 
     Eigen::SparseMatrixd A = mass - dt*dt * tmp_stiffness;
