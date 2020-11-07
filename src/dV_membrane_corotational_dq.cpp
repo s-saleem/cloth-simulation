@@ -84,13 +84,14 @@ static void get_dF_dq(Eigen::Matrix99d &dF, Eigen::Ref<const Eigen::VectorXd> q,
         deltaX2.z(), 0, -deltaX2.x(),
         -deltaX2.y(), deltaX2.x(), 0;
 
-    Eigen::Matrix39d d_delta_x1, d_delta_x2;
+    Eigen::MatrixXd d_delta_x1(3, 9), d_delta_x2(3,9);
     d_delta_x1 << -Eigen::Matrix3d::Identity(), Eigen::Matrix3d::Identity(), Eigen::Matrix3d::Zero();
     d_delta_x2 << -Eigen::Matrix3d::Identity(), Eigen::Matrix3d::Zero(), Eigen::Matrix3d::Identity();
 
     double norm = deltaX1.cross(deltaX2).norm();
 
-    Eigen::Matrix39d dn_dq = 1 / norm * (Eigen::Matrix3d::Identity() - n * n.transpose()) *
+    Eigen::MatrixXd dn_dq(3,9);
+    dn_dq = 1 / norm * (Eigen::Matrix3d::Identity() - n * n.transpose()) *
                             (dx1_cross * d_delta_x2 - dx2_cross * d_delta_x1);
 
     dF = B + N_extended * dn_dq;
@@ -141,9 +142,9 @@ void dV_membrane_corotational_dq(Eigen::Vector9d &dV, Eigen::Ref<const Eigen::Ve
     }
     
     //TODO: energy model gradient 
-    // S(0) = sqrt(S(0));
-    // S(1) = sqrt(S(1));
-    // S(2) = sqrt(S(2));
+    S(0) = sqrt(S(0));
+    S(1) = sqrt(S(1));
+    S(2) = sqrt(S(2));
 
     // if(S(0) < 0.9 || S(1) < 0.9 || S(2) < 0.9 || S(0) > 1.01 || S(1) > 1.01 || S(2) > 1.01) {
     //     std::cout << "V S: " << S << std::endl;
@@ -166,7 +167,7 @@ void dV_membrane_corotational_dq(Eigen::Vector9d &dV, Eigen::Ref<const Eigen::Ve
     // dV = dF^T/dq * dpsi/dF
     Eigen::Vector9d dpsi_flat;
     dpsi_flat << dpsi_dF.row(0).transpose(), dpsi_dF.row(1).transpose(), dpsi_dF.row(2).transpose();
-    dV = dF_dq.transpose() * dpsi_flat;
+    dV = area * dF_dq.transpose() * dpsi_flat;
 
     // std::cout << "dF/dq: \n" << dF_dq << std::endl;
     // std::cout << "dn/dq: \n" << dn_dq << std::endl;

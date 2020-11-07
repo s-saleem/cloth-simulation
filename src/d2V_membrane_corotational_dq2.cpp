@@ -84,18 +84,17 @@ static void get_dF_dq(Eigen::Matrix99d &dF, Eigen::Ref<const Eigen::VectorXd> q,
         deltaX2.z(), 0, -deltaX2.x(),
         -deltaX2.y(), deltaX2.x(), 0;
 
-    Eigen::Matrix39d d_delta_x1, d_delta_x2;
+    Eigen::MatrixXd d_delta_x1(3,9), d_delta_x2(3,9);
     d_delta_x1 << -Eigen::Matrix3d::Identity(), Eigen::Matrix3d::Identity(), Eigen::Matrix3d::Zero();
     d_delta_x2 << -Eigen::Matrix3d::Identity(), Eigen::Matrix3d::Zero(), Eigen::Matrix3d::Identity();
 
     double norm = deltaX1.cross(deltaX2).norm();
 
-    Eigen::Matrix39d dn_dq = 1 / norm * (Eigen::Matrix3d::Identity() - n * n.transpose()) *
+    Eigen::MatrixXd dn_dq(3,9);
+    dn_dq = 1 / norm * (Eigen::Matrix3d::Identity() - n * n.transpose()) *
                             (dx1_cross * d_delta_x2 - dx2_cross * d_delta_x1);
 
     dF = B + N_extended * dn_dq;
-
-    // std::cout << "dF: \n" << dF.norm() << std::endl;
 }
 
 void d2V_membrane_corotational_dq2(Eigen::Matrix99d &H, Eigen::Ref<const Eigen::VectorXd> q, Eigen::Ref<const Eigen::Matrix3d> dX, 
@@ -157,9 +156,9 @@ void d2V_membrane_corotational_dq2(Eigen::Matrix99d &H, Eigen::Ref<const Eigen::
     // H = dF^T/d * d2psi/dF2 * dF/dq
 
     // Calculate d2psi/dF2
-    // S(0) = sqrt(S(0));
-    // S(1) = sqrt(S(1));
-    // S(2) = sqrt(S(2));
+    S(0) = sqrt(S(0));
+    S(1) = sqrt(S(1));
+    S(2) = sqrt(S(2));
 
     // if(S(0) < 0.9 || S(1) < 0.9 || S(2) < 0.9 || S(0) > 1.01 || S(1) > 1.01 || S(2) > 1.01) {
     //     std::cout << "H S: " << S << std::endl;
@@ -196,7 +195,7 @@ void d2V_membrane_corotational_dq2(Eigen::Matrix99d &H, Eigen::Ref<const Eigen::
     Eigen::Matrix99d dF_dq;
     get_dF_dq(dF_dq, q, dX, V, element);
 
-    H = dF_dq.transpose() * d2psi_dF2 * dF_dq;
+    H = dF_dq.transpose() * d2psi_dF2 * dF_dq * area;
 
     //fix errant eigenvalues
     Eigen::SelfAdjointEigenSolver<Eigen::Matrix99d> es(H);

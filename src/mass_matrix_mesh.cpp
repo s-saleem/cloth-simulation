@@ -27,6 +27,8 @@ void mass_matrix_mesh(Eigen::SparseMatrixd &M, Eigen::Ref<const Eigen::VectorXd>
                     1/24,    0,    0, 1/24,    0,    0, 1/12,    0,    0,
                     0, 1/24,    0,    0, 1/24,    0,    0, 1/12,    0,
                     0,    0, 1/24,    0,    0, 1/24,    0,    0, 1/12;
+
+    M_traingle *= 2;
     
     typedef Eigen::Triplet<double> T;
     std::vector<T> tripletList;
@@ -37,7 +39,7 @@ void mass_matrix_mesh(Eigen::SparseMatrixd &M, Eigen::Ref<const Eigen::VectorXd>
         Eigen::RowVector3i element;
         element = F.row(i);
 
-        Eigen::Matrix99d M_i = 2 * density * areas[i] * M_traingle;
+        Eigen::Matrix99d M_i = density * areas[i] * M_traingle;
 
         for(int j = 0; j < element.size(); j++) {
             for(int k = 0; k < element.size(); k++) {
