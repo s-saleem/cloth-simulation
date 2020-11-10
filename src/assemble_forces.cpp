@@ -24,8 +24,8 @@ void assemble_forces(Eigen::VectorXd &f, Eigen::Ref<const Eigen::VectorXd> q, Ei
             dV_membrane_corotational_dq(f_e, q, dphi_dX, V, element, a0[i], mu, lambda);
             f_e *= -1;
 
-            for(int i = 0; i < element.size() ; i++) {
-                f.segment<3>(element(i)*3) += f_e.segment<3>(i*3);
+            for(int j = 0; j < element.size() ; j++) {
+                f.segment<3>(element(j)*3) += f_e.segment<3>(j*3);
             }
         }
        

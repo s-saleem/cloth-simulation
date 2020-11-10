@@ -1,4 +1,5 @@
 #include <mass_matrix_mesh.h>
+#include <iostream>
 
 typedef Eigen::Triplet<double> T;
 static void copyMatrixToTripletList(std::vector<T> &tripletList, int startRow, int startCol, Eigen::MatrixXd K) {
@@ -17,18 +18,18 @@ void mass_matrix_mesh(Eigen::SparseMatrixd &M, Eigen::Ref<const Eigen::VectorXd>
     * N = [(1-phi1-phi2)*eye(3) phi1*eye(3) phi2*eye(3)]
     * int(int(int(N'*N, phi2, 0, 1-phi1), phi1, 0, 1)
     */
-    Eigen::Matrix99d M_traingle;
-    M_traingle << 1/12,    0,    0, 1/24,    0,    0, 1/24,    0,    0,
-                    0, 1/12,    0,    0, 1/24,    0,    0, 1/24,    0,
-                    0,    0, 1/12,    0,    0, 1/24,    0,    0, 1/24,
-                    1/24,    0,    0, 1/12,    0,    0, 1/24,    0,    0,
-                    0, 1/24,    0,    0, 1/12,    0,    0, 1/24,    0,
-                    0,    0, 1/24,    0,    0, 1/12,    0,    0, 1/24,
-                    1/24,    0,    0, 1/24,    0,    0, 1/12,    0,    0,
-                    0, 1/24,    0,    0, 1/24,    0,    0, 1/12,    0,
-                    0,    0, 1/24,    0,    0, 1/24,    0,    0, 1/12;
+    Eigen::MatrixXd M_triangle(9,9);
+    M_triangle << 1/12.0,    0,    0, 1/24.0,    0,    0, 1/24.0,    0,    0,
+                    0, 1/12.0,    0,    0, 1/24.0,    0,    0, 1/24.0,    0,
+                    0,    0, 1/12.0,    0,    0, 1/24.0,    0,    0, 1/24.0,
+                    1/24.0,    0,    0, 1/12.0,    0,    0, 1/24.0,    0,    0,
+                    0, 1/24.0,    0,    0, 1/12.0,    0,    0, 1/24.0,    0,
+                    0,    0, 1/24.0,    0,    0, 1/12.0,    0,    0, 1/24.0,
+                    1/24.0,    0,    0, 1/24.0,    0,    0, 1/12.0,    0,    0,
+                    0, 1/24.0,    0,    0, 1/24.0,    0,    0, 1/12.0,    0,
+                    0,    0, 1/24.0,    0,    0, 1/24.0,    0,    0, 1/12.0;
 
-    M_traingle *= 2;
+    M_triangle *= 2;
     
     typedef Eigen::Triplet<double> T;
     std::vector<T> tripletList;
@@ -39,7 +40,7 @@ void mass_matrix_mesh(Eigen::SparseMatrixd &M, Eigen::Ref<const Eigen::VectorXd>
         Eigen::RowVector3i element;
         element = F.row(i);
 
-        Eigen::Matrix99d M_i = density * areas[i] * M_traingle;
+        Eigen::MatrixXd M_i = density * areas[i] * M_triangle;
 
         for(int j = 0; j < element.size(); j++) {
             for(int k = 0; k < element.size(); k++) {

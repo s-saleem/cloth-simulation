@@ -146,11 +146,6 @@ void dV_membrane_corotational_dq(Eigen::Vector9d &dV, Eigen::Ref<const Eigen::Ve
     S(1) = sqrt(S(1));
     S(2) = sqrt(S(2));
 
-    // if(S(0) < 0.9 || S(1) < 0.9 || S(2) < 0.9 || S(0) > 1.01 || S(1) > 1.01 || S(2) > 1.01) {
-    //     std::cout << "V S: " << S << std::endl;
-    //     exit(0);
-    // }
-
     // Calcualte dpsi/dF
     Eigen::Matrix3d dpsi_dS;
     dpsi_dS = 2 * mu * (Eigen::Matrix3d(S.asDiagonal()) - Eigen::Matrix3d::Identity()); 
@@ -169,12 +164,5 @@ void dV_membrane_corotational_dq(Eigen::Vector9d &dV, Eigen::Ref<const Eigen::Ve
     dpsi_flat << dpsi_dF.row(0).transpose(), dpsi_dF.row(1).transpose(), dpsi_dF.row(2).transpose();
     dV = area * dF_dq.transpose() * dpsi_flat;
 
-    // std::cout << "dF/dq: \n" << dF_dq << std::endl;
-    // std::cout << "dn/dq: \n" << dn_dq << std::endl;
-    // std::cout << "dV: \n" << dV << std::endl;
-    // exit(0);
-    // if (n.transpose() * N < 0.99) {
-    //     std::cout << "dV : n dot N: " << n.transpose() * N << std::endl;
-    //     exit(0);
-    // }
+    // std::cout << 
 }

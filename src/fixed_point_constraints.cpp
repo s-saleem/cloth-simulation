@@ -1,11 +1,11 @@
 #include <fixed_point_constraints.h>
 #include <algorithm>
 void fixed_point_constraints(Eigen::SparseMatrixd &P, unsigned int q_size, const std::vector<unsigned int> indices) {
-
     typedef Eigen::Triplet<double> T;
     std::vector<T> tripletList;
     tripletList.reserve(q_size - 3 * indices.size());
 
+    P.resize(q_size - 3 * indices.size(), q_size);
     int j = 0;
     for(int i = 0; i < q_size / 3; i++) {
         if (std::find(indices.begin(), indices.end(), i) == indices.end()) {
@@ -16,7 +16,6 @@ void fixed_point_constraints(Eigen::SparseMatrixd &P, unsigned int q_size, const
         }
     }
 
-    P.resize(q_size - 3 * indices.size(), q_size);
     P.setFromTriplets(tripletList.begin(), tripletList.end());
 
 }

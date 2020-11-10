@@ -159,11 +159,6 @@ void d2V_membrane_corotational_dq2(Eigen::Matrix99d &H, Eigen::Ref<const Eigen::
     S(0) = sqrt(S(0));
     S(1) = sqrt(S(1));
     S(2) = sqrt(S(2));
-
-    // if(S(0) < 0.9 || S(1) < 0.9 || S(2) < 0.9 || S(0) > 1.01 || S(1) > 1.01 || S(2) > 1.01) {
-    //     std::cout << "H S: " << S << std::endl;
-    //     exit(0);
-    // }
     
     Eigen::Tensor3333d dU, dV;
     Eigen::Tensor333d dS;
@@ -187,6 +182,7 @@ void d2V_membrane_corotational_dq2(Eigen::Matrix99d &H, Eigen::Ref<const Eigen::
             d2psi += (U * ds_ij.asDiagonal() * W.transpose());
             d2psi += (U * dpsi_dS * dV[i][j].transpose());
             // Flatten 3x3 into 1x9
+            // if (i == 0 && j == 0) std::cout << d2psi << std::endl;
             d2psi_dF2.row(3*i + j) << d2psi.row(0), d2psi.row(1), d2psi.row(2);
         }   
     }
@@ -195,7 +191,7 @@ void d2V_membrane_corotational_dq2(Eigen::Matrix99d &H, Eigen::Ref<const Eigen::
     Eigen::Matrix99d dF_dq;
     get_dF_dq(dF_dq, q, dX, V, element);
 
-    H = dF_dq.transpose() * d2psi_dF2 * dF_dq * area;
+    H = area * dF_dq.transpose() * d2psi_dF2 * dF_dq;
 
     //fix errant eigenvalues
     Eigen::SelfAdjointEigenSolver<Eigen::Matrix99d> es(H);
@@ -211,12 +207,7 @@ void d2V_membrane_corotational_dq2(Eigen::Matrix99d &H, Eigen::Ref<const Eigen::
     
     H = Evec * DiagEval * Evec.transpose();
 
-    // std::cout << "hessian: " << H << std::endl;
-    // std::cout << "S: " << S << std::endl;
-    
-    // if (n.transpose() * N < 0.99) {
-    //     std::cout << "H: n dot N: " << n.transpose() * N << std::endl;
-    //     exit(0);
-    // }
-    
+    // std::cout << "d2psi: \n" <<  d2psi_dF2 << std::endl;
+    // std::cout << "H: \n" << H << std::endl;
+    // exit(0);
 }
