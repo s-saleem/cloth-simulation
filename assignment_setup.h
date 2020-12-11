@@ -35,6 +35,8 @@
 #include <collision_detection_cloth_sphere.h>
 #include <velocity_filter_cloth_sphere.h>
 
+#include <mass_vector.h>
+
 //Variable for geometry
 Eigen::MatrixXd V, V_skin; //vertices of simulation mesh //this will hold all individual pieces of cloth, I'll load some offsets
 Eigen::MatrixXi F, F_skin; //faces of simulation mesh
@@ -57,7 +59,7 @@ Eigen::SparseMatrixd P;
 Eigen::VectorXd x0; 
 
 //mass matrix
-Eigen::SparseMatrixd M; //mass matrix
+Eigen::VectorXd M; //mass vector
 Eigen::VectorXd a0; //areas
 Eigen::MatrixXd dX; //dX matrices for computing deformation gradients
 
@@ -96,65 +98,97 @@ inline void simulate(Eigen::VectorXd &q, Eigen::VectorXd &qdot, double dt, doubl
     }
 
     
-    KE = PE = 0.;
+    // KE = PE = 0.;
 
-    auto energy = [&](Eigen::Ref<const Eigen::VectorXd> qdot_1)->double {
-        double E = 0;
-        Eigen::VectorXd newq = P.transpose()*(q+dt*qdot_1)+x0;
+    // auto energy = [&](Eigen::Ref<const Eigen::VectorXd> qdot_1)->double {
+    //     double E = 0;
+    //     Eigen::VectorXd newq = P.transpose()*(q+dt*qdot_1)+x0;
 
-        for(unsigned int ei=0; ei<F.rows(); ++ei) {
+    //     for(unsigned int ei=0; ei<F.rows(); ++ei) {
             
-            V_membrane_corotational(V_ele,newq , Eigen::Map<Eigen::Matrix3d>(dX.row(ei).data()), V, F.row(ei), a0(ei), C, D);
-            E += V_ele;
-        }
+    //         V_membrane_corotational(V_ele,newq , Eigen::Map<Eigen::Matrix3d>(dX.row(ei).data()), V, F.row(ei), a0(ei), C, D);
+    //         E += V_ele;
+    //     }
 
-        for(unsigned int pickedi = 0; pickedi < spring_points.size(); pickedi++) {   
-            V_spring_particle_particle(V_ele, spring_points[pickedi].first, newq.segment<3>(spring_points[pickedi].second), 0.0, k_selected_now);
-            E += V_ele;
-        }
+    //     for(unsigned int pickedi = 0; pickedi < spring_points.size(); pickedi++) {   
+    //         V_spring_particle_particle(V_ele, spring_points[pickedi].first, newq.segment<3>(spring_points[pickedi].second), 0.0, k_selected_now);
+    //         E += V_ele;
+    //     }
 
-        E += 0.5*(qdot_1 - qdot).transpose()*M*(qdot_1 - qdot);
+    //     E += 0.5*(qdot_1 - qdot).transpose()*M*(qdot_1 - qdot);
 
-        return E;
-    };
+    //     return E;
+    // };
 
-    auto force = [&](Eigen::VectorXd &f, Eigen::Ref<const Eigen::VectorXd> q2, Eigen::Ref<const Eigen::VectorXd> qdot2) { 
+    // auto force = [&](Eigen::VectorXd &f, Eigen::Ref<const Eigen::VectorXd> q2, Eigen::Ref<const Eigen::VectorXd> qdot2) { 
         
-            assemble_forces(f, P.transpose()*q2+x0, P.transpose()*qdot2, dX, V, F, a0, C,D);
-            f -= gravity;
+    //         // assemble_forces(f, P.transpose()*q2+x0, P.transpose()*qdot2, dX, V, F, a0, C,D);
+    //         f -= gravity;
         
-            for(unsigned int pickedi = 0; pickedi < spring_points.size(); pickedi++) {
-                dV_spring_particle_particle_dq(dV_mouse, spring_points[pickedi].first, (P.transpose()*q2+x0).segment<3>(spring_points[pickedi].second), 0.0, k_selected_now);
-                f.segment<3>(3*Visualize::picked_vertices()[pickedi]) -= dV_mouse.segment<3>(3);
-            }
+    //         for(unsigned int pickedi = 0; pickedi < spring_points.size(); pickedi++) {
+    //             dV_spring_particle_particle_dq(dV_mouse, spring_points[pickedi].first, (P.transpose()*q2+x0).segment<3>(spring_points[pickedi].second), 0.0, k_selected_now);
+    //             f.segment<3>(3*Visualize::picked_vertices()[pickedi]) -= dV_mouse.segment<3>(3);
+    //         }
 
         
-            f = P*f;
-            //std::cout<<"Force: "<<f.transpose()<<"\n";
-        };
+    //         f = P*f;
+    //         //std::cout<<"Force: "<<f.transpose()<<"\n";
+    // };
 
     //assemble stiffness matrix,
-    auto stiffness = [&](Eigen::SparseMatrixd &K, Eigen::Ref<const Eigen::VectorXd> q2, Eigen::Ref<const Eigen::VectorXd> qdot2) { 
-        assemble_stiffness(K, P.transpose()*q2+x0, P.transpose()*qdot2, dX, V, F, a0, C, D);
-        K = P*K*P.transpose();
-    };
+    // auto stiffness = [&](Eigen::SparseMatrixd &K, Eigen::Ref<const Eigen::VectorXd> q2, Eigen::Ref<const Eigen::VectorXd> qdot2) { 
+    //     assemble_stiffness(K, P.transpose()*q2+x0, P.transpose()*qdot2, dX, V, F, a0, C, D);
+    //     K = P*K*P.transpose();
+    // };
 
     //run collision detector
-    if(collision_detection_on) {
-        collision_detection_cloth_sphere(collision_indices, collision_normals, q, Eigen::Vector3d(0.0, 0.0, 0.4), 0.22);
-    }
+    // if(collision_detection_on) {
+    //     collision_detection_cloth_sphere(collision_indices, collision_normals, q, Eigen::Vector3d(0.0, 0.0, 0.4), 0.22);
+    // }
 
-    qtmp = q; 
-    //unconstrained velocity
-    linearly_implicit_euler(q, qdot, dt, M, force, stiffness, tmp_force, tmp_stiffness);
+    // qtmp = q; 
+    // //unconstrained velocity
+    // linearly_implicit_euler(q, qdot, dt, M, force, stiffness, tmp_force, tmp_stiffness);
     
     //velocity filter 
-    if(collision_detection_on) {
-        velocity_filter_cloth_sphere(qdot, collision_indices, collision_normals);
-    }
+    // if(collision_detection_on) {
+    //     velocity_filter_cloth_sphere(qdot, collision_indices, collision_normals);
+    // }
 
-    q = qtmp + dt*qdot;
+    // q = qtmp + dt*qdot;
     //std::cout<<q.transpose()<<"\n";
+
+    /**
+     * Step 1 - update velocity for external force not described in constraints
+     * gravity - v_i += dt * g
+     */
+    // Eigen::VectorXd G(qdot.size());
+    // for(int i = 0; i < qdot.size(); i++) {
+    //     G[i] = gravity[i % 3];
+    // }
+
+    // qdot += dt * G;
+
+    // qtmp = q + dt * qdot;
+
+
+    /**
+     * Step 2 - generate collison constraints
+     */
+
+
+    /**
+     * Step 3 - for X iterations project constraints
+     */
+
+
+    /**
+     * Step 4 - update velocity with new postions (after constraints)
+     */
+
+    // qdot = (qtmp - q) / dt;
+    // q = qtmp;
+
 }
 
 inline void draw(Eigen::Ref<const Eigen::VectorXd> q, Eigen::Ref<const Eigen::VectorXd> qdot, double t) {
@@ -203,33 +237,34 @@ inline void assignment_setup(int argc, char **argv, Eigen::VectorXd &q, Eigen::V
     Visualize::add_object_to_scene(V_sphere,F_sphere, V_sphere_skin, F_sphere_skin, N, Eigen::RowVector3d(244,165,130)/255.);
     Visualize::set_visible(1, collision_detection_on);
 
-    //compute dX and area of each face;
-    dX.resize(F.rows(), 9);
-    a0.resize(F.rows(),1);
-    for(unsigned int ii=0; ii<F.rows(); ++ii) {
-        Eigen::Matrix3d dX_tmp;
-        //Eigen::Matrix<double, 1,9> tmp_row;
-        dphi_cloth_triangle_dX(dX_tmp, V, F.row(ii), Eigen::Vector3d(0.,0.,0.)); //X doesn't matter since dphi is constant per element.
-        dX.row(ii) = Eigen::Map<Eigen::Matrix<double, 1, 9> >(dX_tmp.data());
+    // //compute dX and area of each face;
+    // dX.resize(F.rows(), 9);
+    // a0.resize(F.rows(),1);
+    // for(unsigned int ii=0; ii<F.rows(); ++ii) {
+    //     Eigen::Matrix3d dX_tmp;
+    //     //Eigen::Matrix<double, 1,9> tmp_row;
+    //     dphi_cloth_triangle_dX(dX_tmp, V, F.row(ii), Eigen::Vector3d(0.,0.,0.)); //X doesn't matter since dphi is constant per element.
+    //     dX.row(ii) = Eigen::Map<Eigen::Matrix<double, 1, 9> >(dX_tmp.data());
 
-        //std::cout<<"dX_tmp:\n "<<dX_tmp<<"\n";
-        //std::cout<<"dX row: "<<dX.row(ii)<<"\n";
+    //     //std::cout<<"dX_tmp:\n "<<dX_tmp<<"\n";
+    //     //std::cout<<"dX row: "<<dX.row(ii)<<"\n";
         
-        //tmp_row = dX.row(ii);
-        //std::cout<<"Retrieval: \n"<<Eigen::Map<const Eigen::Matrix3d>(tmp_row.data())<<"\n";
-        //Heron's formula for area
-        double side_a = (V.row(F(ii,1)) - V.row(F(ii,0))).norm();
-        double side_b = (V.row(F(ii,2)) - V.row(F(ii,1))).norm();
-        double side_c = (V.row(F(ii,0)) - V.row(F(ii,2))).norm();
-        double s = (side_a+side_b+side_c)/2.;
-        a0(ii) = sqrt(s*(s-side_a)*(s-side_b)*(s-side_c));
-     }
+    //     //tmp_row = dX.row(ii);
+    //     //std::cout<<"Retrieval: \n"<<Eigen::Map<const Eigen::Matrix3d>(tmp_row.data())<<"\n";
+    //     //Heron's formula for area
+    //     double side_a = (V.row(F(ii,1)) - V.row(F(ii,0))).norm();
+    //     double side_b = (V.row(F(ii,2)) - V.row(F(ii,1))).norm();
+    //     double side_c = (V.row(F(ii,0)) - V.row(F(ii,2))).norm();
+    //     double s = (side_a+side_b+side_c)/2.;
+    //     a0(ii) = sqrt(s*(s-side_a)*(s-side_b)*(s-side_c));
+    // }
     
     //Mass Matrix
-    mass_matrix_mesh(M, q,  V, F, density, a0);
+    // mass_matrix_mesh(M, q,  V, F, density, a0);
+    mass_vector(M, q, V, F, density);
 
-    if(M.rows() == 0) {
-        std::cout<<"Mass matrix not implemented, exiting.\n";
+    if(M.size() == 0) {
+        std::cout<<"Mass vector not implemented, exiting.\n";
         exit(1);
     }
     
@@ -243,15 +278,16 @@ inline void assignment_setup(int argc, char **argv, Eigen::VectorXd &q, Eigen::V
     x0 = q - P.transpose()*P*q; //vector x0 contains position of all fixed nodes, zero for everything else    
     
     //constant gravity vector
-    gravity.resize(q.rows(),1);
-    dV_cloth_gravity_dq(gravity, M, Eigen::Vector3d(0,-900.8,0));
+    gravity.resize(3, 1);
+    gravity << 0, -0.0, 0;
+    // dV_cloth_gravity_dq(gravity, M, Eigen::Vector3d(0,-900.8,0));
 
     //std::cout<<"Gravity "<<gravity.transpose()<<"\n";
     
     //correct M, q and qdot so they are the right size
-    q = P*q;
-    qdot = P*qdot;
-    M = P*M*P.transpose();
+    // q = P*q;
+    // qdot = P*qdot;
+    // M = P*M;
     
     Visualize::viewer().callback_key_down = key_down_callback;
 
