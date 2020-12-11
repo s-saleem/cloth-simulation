@@ -162,14 +162,14 @@ inline void simulate(Eigen::VectorXd &q, Eigen::VectorXd &qdot, double dt, doubl
      * Step 1 - update velocity for external force not described in constraints
      * gravity - v_i += dt * g
      */
-    // Eigen::VectorXd G(qdot.size());
-    // for(int i = 0; i < qdot.size(); i++) {
-    //     G[i] = gravity[i % 3];
-    // }
+    Eigen::VectorXd G(qdot.size());
+    for(int i = 0; i < qdot.size(); i++) {
+        G[i] = gravity[i % 3];
+    }
 
-    // qdot += dt * G;
+    qdot += dt * G;
 
-    // qtmp = q + dt * qdot;
+    qtmp = q + dt * qdot;
 
 
     /**
@@ -186,8 +186,8 @@ inline void simulate(Eigen::VectorXd &q, Eigen::VectorXd &qdot, double dt, doubl
      * Step 4 - update velocity with new postions (after constraints)
      */
 
-    // qdot = (qtmp - q) / dt;
-    // q = qtmp;
+    qdot = (qtmp - q) / dt;
+    q = qtmp;
 
 }
 
@@ -279,14 +279,14 @@ inline void assignment_setup(int argc, char **argv, Eigen::VectorXd &q, Eigen::V
     
     //constant gravity vector
     gravity.resize(3, 1);
-    gravity << 0, -0.0, 0;
+    gravity << 0, -0.05, 0;
     // dV_cloth_gravity_dq(gravity, M, Eigen::Vector3d(0,-900.8,0));
 
     //std::cout<<"Gravity "<<gravity.transpose()<<"\n";
     
     //correct M, q and qdot so they are the right size
-    // q = P*q;
-    // qdot = P*qdot;
+    q = P*q;
+    qdot = P*qdot;
     // M = P*M;
     
     Visualize::viewer().callback_key_down = key_down_callback;
