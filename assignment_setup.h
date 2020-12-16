@@ -12,6 +12,9 @@
 
 //assignment files for implementing simulation and interaction
 #include <visualization.h>
+#include <igl/edges.h>
+#include <igl/edge_lengths.h>
+#include <igl/triangle_triangle_adjacency.h>
 #include <init_state.h>
 #include <find_max_vertices.h>
 #include <fixed_point_constraints.h>
@@ -36,10 +39,21 @@
 #include <velocity_filter_cloth_sphere.h>
 
 #include <mass_vector.h>
+#include <stretch_constraint.h>
+#include <stretch_constraint_gradient.h>
 
 //Variable for geometry
 Eigen::MatrixXd V, V_skin; //vertices of simulation mesh //this will hold all individual pieces of cloth, I'll load some offsets
 Eigen::MatrixXi F, F_skin; //faces of simulation mesh
+Eigen::MatrixXi E; //edges of simulation mesh (which will become springs)
+Eigen::VectorXd l0; //original length of all edges in the mesh
+
+//   TT   #F by #3 adjacent matrix, the element i,j is the id of the triangle
+//        adjacent to the j edge of triangle i
+//   TTi  #F by #3 adjacent matrix, the element i,j is the id of edge of the
+//        triangle TT(i,j) that is adjacent with triangle i
+Eigen::MatrixXi TT;
+Eigen::MatrixXi TTi;
 
 Eigen::MatrixXd V_sphere, V_sphere_skin; //vertices of simulation mesh //this will hold all individual pieces of cloth, I'll load some offsets
 Eigen::MatrixXi F_sphere, F_sphere_skin; //faces of simulation mesh
@@ -94,7 +108,8 @@ inline void simulate(Eigen::VectorXd &q, Eigen::VectorXd &qdot, double dt, doubl
     double k_selected_now = (Visualize::is_mouse_dragging() ? k_selected : 0.);
     
     for(unsigned int pickedi = 0; pickedi < Visualize::picked_vertices().size(); pickedi++) {   
-        spring_points.push_back(std::make_pair((P.transpose()*q+x0).segment<3>(3*Visualize::picked_vertices()[pickedi]) + Visualize::mouse_drag_world() + Eigen::Vector3d::Constant(1e-6),3*Visualize::picked_vertices()[pickedi]));
+        // spring_points.push_back(std::make_pair((P.transpose()*q+x0).segment<3>(3*Visualize::picked_vertices()[pickedi]) + Visualize::mouse_drag_world() + Eigen::Vector3d::Constant(1e-6),3*Visualize::picked_vertices()[pickedi]));
+        spring_points.push_back(std::make_pair(q.segment<3>(3*Visualize::picked_vertices()[pickedi]) + Visualize::mouse_drag_world() + Eigen::Vector3d::Constant(1e-6),3*Visualize::picked_vertices()[pickedi]));
     }
 
     
@@ -163,14 +178,19 @@ inline void simulate(Eigen::VectorXd &q, Eigen::VectorXd &qdot, double dt, doubl
      * gravity - v_i += dt * g
      */
     Eigen::VectorXd G(qdot.size());
+    
     for(int i = 0; i < qdot.size(); i++) {
         G[i] = gravity[i % 3];
     }
 
-    qdot += dt * G;
+    Eigen::VectorXd f = G;
+    for(unsigned int pickedi = 0; pickedi < spring_points.size(); pickedi++) {
+        dV_spring_particle_particle_dq(dV_mouse, spring_points[pickedi].first, q.segment<3>(spring_points[pickedi].second), 0.0, k_selected_now);
+        f.segment<3>(3*Visualize::picked_vertices()[pickedi]) -= dV_mouse.segment<3>(3);
+    }
 
+    qdot += dt * f;// * 0;
     qtmp = q + dt * qdot;
-
 
     /**
      * Step 2 - generate collison constraints
@@ -180,6 +200,51 @@ inline void simulate(Eigen::VectorXd &q, Eigen::VectorXd &qdot, double dt, doubl
     /**
      * Step 3 - for X iterations project constraints
      */
+    // std::cout << "Edges: " << E.rows() << std::endl;
+    // std::cout << "Vertices: " << V.rows() << std::endl;
+    // std::cout << "q size: " << q.rows() << std::endl;
+    int solver_iterations = 1;
+    for(int i = 0; i < solver_iterations; i++) {
+        // fixed point constraints
+        for(int j = 0; j < fixed_point_indices.size(); j++) {
+
+            int idx = fixed_point_indices[j];
+            Eigen::Vector3d p1 = qtmp.segment<3>(3 * idx);
+            Eigen::Vector3d p2 = V.row(idx);
+
+            double l = 0;
+    
+            double constraint = stretch_constraint(p1, p2, l);
+            Eigen::Vector6d gradient = stretch_constraint_gradient(p1, p2);
+
+            Eigen::Vector6d delta_p = -constraint / (gradient.norm() * gradient.norm()) * gradient;
+            
+            qtmp.segment<3>(3 * idx) += delta_p.segment<3>(0);
+        }
+
+        // loop through stretch constraints
+        double stretch_stiffness = 0.3;
+        for(int j = 0; j < E.rows(); j++) {
+            // std::cout << "points: " << E(j, 0) << ", " << E(j, 1) << std::endl;
+            int idx1 = E(j, 0);
+            int idx2 = E(j, 1);
+
+            Eigen::Vector3d p1 = qtmp.segment<3>(3 * idx1);
+            Eigen::Vector3d p2 = qtmp.segment<3>(3 * idx2);
+
+            double l = l0(j);
+    
+            double constraint = stretch_constraint(p1, p2, l);
+            Eigen::Vector6d gradient = stretch_constraint_gradient(p1, p2);
+
+            Eigen::Vector6d delta_p = -constraint / (gradient.norm() * gradient.norm()) * gradient;
+
+            double k = 1 - pow(1 - stretch_stiffness, 1 / solver_iterations);
+            qtmp.segment<3>(3 * E(j, 0)) += k * delta_p.segment<3>(0);
+            qtmp.segment<3>(3 * E(j, 1)) += k * delta_p.segment<3>(3);
+
+        }
+    }
 
 
     /**
@@ -194,7 +259,8 @@ inline void simulate(Eigen::VectorXd &q, Eigen::VectorXd &qdot, double dt, doubl
 inline void draw(Eigen::Ref<const Eigen::VectorXd> q, Eigen::Ref<const Eigen::VectorXd> qdot, double t) {
 
     //update vertex positions using simulation
-    Visualize::update_vertex_positions(0, P.transpose()*q + x0);
+    // Visualize::update_vertex_positions(0, P.transpose()*q + x0);
+    Visualize::update_vertex_positions(0, q);
 
 }
 
@@ -220,6 +286,11 @@ inline void assignment_setup(int argc, char **argv, Eigen::VectorXd &q, Eigen::V
     //setup simulation 
     init_state(q,qdot,V);
 
+    // Set up edges and adjacent faces
+    igl::edges(F, E);
+    igl::edge_lengths(V, E, l0);
+    igl::triangle_triangle_adjacency(F, TT, TTi);
+
     //add geometry to scene
     V_skin = V;
     F_skin = F;
@@ -233,6 +304,7 @@ inline void assignment_setup(int argc, char **argv, Eigen::VectorXd &q, Eigen::V
     F_sphere_skin = F_sphere;
     N.resize(V.rows(), V.rows());
     N.setIdentity();
+
 
     Visualize::add_object_to_scene(V_sphere,F_sphere, V_sphere_skin, F_sphere_skin, N, Eigen::RowVector3d(244,165,130)/255.);
     Visualize::set_visible(1, collision_detection_on);
@@ -258,6 +330,11 @@ inline void assignment_setup(int argc, char **argv, Eigen::VectorXd &q, Eigen::V
     //     double s = (side_a+side_b+side_c)/2.;
     //     a0(ii) = sqrt(s*(s-side_a)*(s-side_b)*(s-side_c));
     // }
+
+    // std::vector<StretchConstraint> stretchContraints;
+    // for (int i = 0; i < E.rows(); i++) {
+
+    // }
     
     //Mass Matrix
     // mass_matrix_mesh(M, q,  V, F, density, a0);
@@ -270,6 +347,15 @@ inline void assignment_setup(int argc, char **argv, Eigen::VectorXd &q, Eigen::V
     
     //should be max verts for cloth simulation
     find_max_vertices(fixed_point_indices, V, 0.001);
+    // int edges = E.rows();
+    // E.conservativeResize(E.rows() + fixed_point_indices.size(), E.cols());
+    // l0.conservativeResize(l0.rows() + fixed_point_indices.size());
+    // for(int i = 0; i < fixed_point_indices.size(); i++) {
+    //     E(edges + i, 0) = fixed_point_indices[i];
+    //     E(edges + i, 1) = fixed_point_indices[i];
+    //     l0(edges + i) = 0.0;
+        
+    // }
     
     P.resize(q.rows(),q.rows());
     P.setIdentity();
@@ -279,14 +365,14 @@ inline void assignment_setup(int argc, char **argv, Eigen::VectorXd &q, Eigen::V
     
     //constant gravity vector
     gravity.resize(3, 1);
-    gravity << 0, -0.05, 0;
+    gravity << 0, -9.8, 0;
     // dV_cloth_gravity_dq(gravity, M, Eigen::Vector3d(0,-900.8,0));
 
     //std::cout<<"Gravity "<<gravity.transpose()<<"\n";
     
     //correct M, q and qdot so they are the right size
-    q = P*q;
-    qdot = P*qdot;
+    // q = P*q;
+    // qdot = P*qdot;
     // M = P*M;
     
     Visualize::viewer().callback_key_down = key_down_callback;
