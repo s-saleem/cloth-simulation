@@ -129,7 +129,7 @@ inline void simulate(Eigen::VectorXd &q, Eigen::VectorXd &qdot, double dt, doubl
     Eigen::VectorXd W(qdot.size());
     
     for(int i = 0; i < qdot.size(); i++) {
-        W[i] = wind[i % 3] * sin(dt * M_PI) * sin(dt * M_PI);
+        W[i] = wind[i % 3];// * sin(dt * M_PI) * sin(dt * M_PI);
     }
 
     Eigen::VectorXd f = G + W;
@@ -149,9 +149,6 @@ inline void simulate(Eigen::VectorXd &q, Eigen::VectorXd &qdot, double dt, doubl
     /**
      * Step 3 - for X iterations project constraints
      */
-    // std::cout << "Edges: " << E.rows() << std::endl;
-    // std::cout << "Vertices: " << V.rows() << std::endl;
-    // std::cout << "q size: " << q.rows() << std::endl;
     int solver_iterations = 1;
     for(int i = 0; i < solver_iterations; i++) {
         // fixed point constraints
@@ -175,7 +172,7 @@ inline void simulate(Eigen::VectorXd &q, Eigen::VectorXd &qdot, double dt, doubl
         }
 
         // loop through stretch constraints
-        double stretch_stiffness = 0.9;
+        double stretch_stiffness = 0.001;
         for(int j = 0; j < E.rows(); j++) {
             int idx1 = E(j, 0);
             int idx2 = E(j, 1);
@@ -207,25 +204,12 @@ inline void simulate(Eigen::VectorXd &q, Eigen::VectorXd &qdot, double dt, doubl
                     w2 *= 2;
                 }
 
-                // if(idx2 == 397 || idx1 == 397) {
-                //     std::cout << "idx1: " << idx1 << std::endl;
-                //     std::cout << "idx2: " << idx2 << std::endl;
-                //     std::cout << "p1: \n" << p1 << std::endl;
-                //     std::cout << "p2: \n" << p2 << std::endl;
-                //     std::cout << "l: " << l << std::endl;
-                //     std::cout << "constraint: " << constraint << std::endl;
-                //     std::cout << "gradient: \n" << gradient << std::endl;
-                //     std::cout << "delta_p: \n" << delta_p << std::endl;
-                //     std::cout << "w1, w2: " << w1 << ", " << w2 << std::endl;
-                //     if(i > 0) exit(0);
-                // }
-
                 qtmp.segment<3>(3 * idx1) += w1 * k * delta_p.segment<3>(0);
                 qtmp.segment<3>(3 * idx2) += w2 * k * delta_p.segment<3>(3);
             }
         }
 
-        double bend_stiffness = 0.01;
+        double bend_stiffness = 0.001;
         for(int j = 0; j < TT.rows(); j++) {
             for(int k = 0; k < TT.row(j).size(); k++) {
                 if(TT(j, k) > j) {
@@ -251,14 +235,6 @@ inline void simulate(Eigen::VectorXd &q, Eigen::VectorXd &qdot, double dt, doubl
                     if(d*d < 1) {
                         Eigen::Vector12d gradient = bend_constraint_gradient(p1, p2, p3, p4);
                         Eigen::Vector12d delta_p = -sqrt(1 - d*d) *constraint / (gradient.norm() * gradient.norm()) * gradient;
-
-                        
-                        // std::cout << "n1: \n" << n1 << std::endl;
-                        // std::cout << "n2: \n" << n2 << std::endl;
-                        // std::cout << "constraint: " << constraint << std::endl;
-                        // std::cout << "gradient: \n" << gradient << std::endl;
-                        // std::cout << "delta_p: \n" << delta_p << std::endl;
-                        // exit(0);
 
                         // keep k linear with iterations (only 1 iteration works right now)
                         double k = 1 - pow(1 - bend_stiffness, 1 / solver_iterations);
