@@ -41,6 +41,8 @@
 #include <mass_vector.h>
 #include <stretch_constraint.h>
 #include <stretch_constraint_gradient.h>
+#include <bend_constraint.h>
+#include <bend_constraint_gradient.h>
 
 //Variable for geometry
 Eigen::MatrixXd V, V_skin; //vertices of simulation mesh //this will hold all individual pieces of cloth, I'll load some offsets
@@ -81,6 +83,7 @@ Eigen::MatrixXd dX; //dX matrices for computing deformation gradients
 Eigen::VectorXd tmp_qdot;
 Eigen::VectorXd tmp_force;
 Eigen::VectorXd gravity;
+Eigen::VectorXd wind;
 Eigen::VectorXd qtmp;
 Eigen::SparseMatrixd tmp_stiffness;
 
@@ -112,66 +115,6 @@ inline void simulate(Eigen::VectorXd &q, Eigen::VectorXd &qdot, double dt, doubl
         spring_points.push_back(std::make_pair(q.segment<3>(3*Visualize::picked_vertices()[pickedi]) + Visualize::mouse_drag_world() + Eigen::Vector3d::Constant(1e-6),3*Visualize::picked_vertices()[pickedi]));
     }
 
-    
-    // KE = PE = 0.;
-
-    // auto energy = [&](Eigen::Ref<const Eigen::VectorXd> qdot_1)->double {
-    //     double E = 0;
-    //     Eigen::VectorXd newq = P.transpose()*(q+dt*qdot_1)+x0;
-
-    //     for(unsigned int ei=0; ei<F.rows(); ++ei) {
-            
-    //         V_membrane_corotational(V_ele,newq , Eigen::Map<Eigen::Matrix3d>(dX.row(ei).data()), V, F.row(ei), a0(ei), C, D);
-    //         E += V_ele;
-    //     }
-
-    //     for(unsigned int pickedi = 0; pickedi < spring_points.size(); pickedi++) {   
-    //         V_spring_particle_particle(V_ele, spring_points[pickedi].first, newq.segment<3>(spring_points[pickedi].second), 0.0, k_selected_now);
-    //         E += V_ele;
-    //     }
-
-    //     E += 0.5*(qdot_1 - qdot).transpose()*M*(qdot_1 - qdot);
-
-    //     return E;
-    // };
-
-    // auto force = [&](Eigen::VectorXd &f, Eigen::Ref<const Eigen::VectorXd> q2, Eigen::Ref<const Eigen::VectorXd> qdot2) { 
-        
-    //         // assemble_forces(f, P.transpose()*q2+x0, P.transpose()*qdot2, dX, V, F, a0, C,D);
-    //         f -= gravity;
-        
-    //         for(unsigned int pickedi = 0; pickedi < spring_points.size(); pickedi++) {
-    //             dV_spring_particle_particle_dq(dV_mouse, spring_points[pickedi].first, (P.transpose()*q2+x0).segment<3>(spring_points[pickedi].second), 0.0, k_selected_now);
-    //             f.segment<3>(3*Visualize::picked_vertices()[pickedi]) -= dV_mouse.segment<3>(3);
-    //         }
-
-        
-    //         f = P*f;
-    //         //std::cout<<"Force: "<<f.transpose()<<"\n";
-    // };
-
-    //assemble stiffness matrix,
-    // auto stiffness = [&](Eigen::SparseMatrixd &K, Eigen::Ref<const Eigen::VectorXd> q2, Eigen::Ref<const Eigen::VectorXd> qdot2) { 
-    //     assemble_stiffness(K, P.transpose()*q2+x0, P.transpose()*qdot2, dX, V, F, a0, C, D);
-    //     K = P*K*P.transpose();
-    // };
-
-    //run collision detector
-    // if(collision_detection_on) {
-    //     collision_detection_cloth_sphere(collision_indices, collision_normals, q, Eigen::Vector3d(0.0, 0.0, 0.4), 0.22);
-    // }
-
-    // qtmp = q; 
-    // //unconstrained velocity
-    // linearly_implicit_euler(q, qdot, dt, M, force, stiffness, tmp_force, tmp_stiffness);
-    
-    //velocity filter 
-    // if(collision_detection_on) {
-    //     velocity_filter_cloth_sphere(qdot, collision_indices, collision_normals);
-    // }
-
-    // q = qtmp + dt*qdot;
-    //std::cout<<q.transpose()<<"\n";
 
     /**
      * Step 1 - update velocity for external force not described in constraints
@@ -183,7 +126,13 @@ inline void simulate(Eigen::VectorXd &q, Eigen::VectorXd &qdot, double dt, doubl
         G[i] = gravity[i % 3];
     }
 
-    Eigen::VectorXd f = G;
+    Eigen::VectorXd W(qdot.size());
+    
+    for(int i = 0; i < qdot.size(); i++) {
+        W[i] = wind[i % 3] * sin(dt * M_PI) * sin(dt * M_PI);
+    }
+
+    Eigen::VectorXd f = G + W;
     for(unsigned int pickedi = 0; pickedi < spring_points.size(); pickedi++) {
         dV_spring_particle_particle_dq(dV_mouse, spring_points[pickedi].first, q.segment<3>(spring_points[pickedi].second), 0.0, k_selected_now);
         f.segment<3>(3*Visualize::picked_vertices()[pickedi]) -= dV_mouse.segment<3>(3);
@@ -215,17 +164,19 @@ inline void simulate(Eigen::VectorXd &q, Eigen::VectorXd &qdot, double dt, doubl
             double l = 0;
     
             double constraint = stretch_constraint(p1, p2, l);
-            Eigen::Vector6d gradient = stretch_constraint_gradient(p1, p2);
+            if(constraint > 0) {
+                Eigen::Vector6d gradient = stretch_constraint_gradient(p1, p2);
 
-            Eigen::Vector6d delta_p = -constraint / (gradient.norm() * gradient.norm()) * gradient;
-            
-            qtmp.segment<3>(3 * idx) += delta_p.segment<3>(0);
+                // -2 because only p1 will move
+                Eigen::Vector6d delta_p = -2 * constraint / (gradient.norm() * gradient.norm()) * gradient;
+                
+                qtmp.segment<3>(3 * idx) += delta_p.segment<3>(0);
+            }
         }
 
         // loop through stretch constraints
-        double stretch_stiffness = 0.3;
+        double stretch_stiffness = 0.9;
         for(int j = 0; j < E.rows(); j++) {
-            // std::cout << "points: " << E(j, 0) << ", " << E(j, 1) << std::endl;
             int idx1 = E(j, 0);
             int idx2 = E(j, 1);
 
@@ -235,14 +186,90 @@ inline void simulate(Eigen::VectorXd &q, Eigen::VectorXd &qdot, double dt, doubl
             double l = l0(j);
     
             double constraint = stretch_constraint(p1, p2, l);
-            Eigen::Vector6d gradient = stretch_constraint_gradient(p1, p2);
+            if(abs(constraint) > 1e-8) {
+                Eigen::Vector6d gradient = stretch_constraint_gradient(p1, p2);
 
-            Eigen::Vector6d delta_p = -constraint / (gradient.norm() * gradient.norm()) * gradient;
+                Eigen::Vector6d delta_p = -constraint / (gradient.norm() * gradient.norm()) * gradient;
 
-            double k = 1 - pow(1 - stretch_stiffness, 1 / solver_iterations);
-            qtmp.segment<3>(3 * E(j, 0)) += k * delta_p.segment<3>(0);
-            qtmp.segment<3>(3 * E(j, 1)) += k * delta_p.segment<3>(3);
+                // keep k linear with iterations (only 1 iteration works right now)
+                double k = 1 - pow(1 - stretch_stiffness, 1 / solver_iterations);
 
+                // dont't move fixed points and double the movement of their adjacent non-fixed points
+                double w1 = 1;
+                double w2 = 1;
+                for(int k = 0; k < fixed_point_indices.size(); k++) {
+                    int idx = fixed_point_indices[k];
+                    if(idx == idx1) w1 = 0;
+                    if(idx == idx2) w2 = 0;
+                }
+                if(w1 != w2) {
+                    w1 *= 2;
+                    w2 *= 2;
+                }
+
+                // if(idx2 == 397 || idx1 == 397) {
+                //     std::cout << "idx1: " << idx1 << std::endl;
+                //     std::cout << "idx2: " << idx2 << std::endl;
+                //     std::cout << "p1: \n" << p1 << std::endl;
+                //     std::cout << "p2: \n" << p2 << std::endl;
+                //     std::cout << "l: " << l << std::endl;
+                //     std::cout << "constraint: " << constraint << std::endl;
+                //     std::cout << "gradient: \n" << gradient << std::endl;
+                //     std::cout << "delta_p: \n" << delta_p << std::endl;
+                //     std::cout << "w1, w2: " << w1 << ", " << w2 << std::endl;
+                //     if(i > 0) exit(0);
+                // }
+
+                qtmp.segment<3>(3 * idx1) += w1 * k * delta_p.segment<3>(0);
+                qtmp.segment<3>(3 * idx2) += w2 * k * delta_p.segment<3>(3);
+            }
+        }
+
+        double bend_stiffness = 0.01;
+        for(int j = 0; j < TT.rows(); j++) {
+            for(int k = 0; k < TT.row(j).size(); k++) {
+                if(TT(j, k) > j) {
+                    Eigen::Vector3i verts_T1 = F.row(j);
+                    Eigen::Vector3i verts_T2 = F.row(TT(j, k));
+
+                    int idx1 = verts_T1(k);
+                    int idx2 = verts_T1((k + 1) % 3);
+                    int idx3 = verts_T1((k + 2) % 3);
+                    int idx4 = verts_T2((TTi(j, k) + 2) % 3);
+
+                    Eigen::Vector3d p1 = qtmp.segment<3>(3 * idx1);
+                    Eigen::Vector3d p2 = qtmp.segment<3>(3 * idx2);
+                    Eigen::Vector3d p3 = qtmp.segment<3>(3 * idx3);
+                    Eigen::Vector3d p4 = qtmp.segment<3>(3 * idx4);
+
+                    Eigen::Vector3d n1 = (p2 - p1).cross(p3 - p1)/ (p2 - p1).cross(p3 - p1).norm();
+                    Eigen::Vector3d n2 = (p2 - p1).cross(p4 - p1)/ (p2 - p1).cross(p4 - p1).norm();
+                    double d = n1.dot(n2);
+
+                    double constraint = bend_constraint(p1, p2, p3, p4);
+
+                    if(d*d < 1) {
+                        Eigen::Vector12d gradient = bend_constraint_gradient(p1, p2, p3, p4);
+                        Eigen::Vector12d delta_p = -sqrt(1 - d*d) *constraint / (gradient.norm() * gradient.norm()) * gradient;
+
+                        
+                        // std::cout << "n1: \n" << n1 << std::endl;
+                        // std::cout << "n2: \n" << n2 << std::endl;
+                        // std::cout << "constraint: " << constraint << std::endl;
+                        // std::cout << "gradient: \n" << gradient << std::endl;
+                        // std::cout << "delta_p: \n" << delta_p << std::endl;
+                        // exit(0);
+
+                        // keep k linear with iterations (only 1 iteration works right now)
+                        double k = 1 - pow(1 - bend_stiffness, 1 / solver_iterations);
+
+                        qtmp.segment<3>(3 * idx1) += k * delta_p.segment<3>(0);
+                        qtmp.segment<3>(3 * idx2) += k * delta_p.segment<3>(3);
+                        qtmp.segment<3>(3 * idx3) += k * delta_p.segment<3>(6);
+                        qtmp.segment<3>(3 * idx4) += k * delta_p.segment<3>(9);
+                    }
+                }
+            }
         }
     }
 
@@ -308,33 +335,6 @@ inline void assignment_setup(int argc, char **argv, Eigen::VectorXd &q, Eigen::V
 
     Visualize::add_object_to_scene(V_sphere,F_sphere, V_sphere_skin, F_sphere_skin, N, Eigen::RowVector3d(244,165,130)/255.);
     Visualize::set_visible(1, collision_detection_on);
-
-    // //compute dX and area of each face;
-    // dX.resize(F.rows(), 9);
-    // a0.resize(F.rows(),1);
-    // for(unsigned int ii=0; ii<F.rows(); ++ii) {
-    //     Eigen::Matrix3d dX_tmp;
-    //     //Eigen::Matrix<double, 1,9> tmp_row;
-    //     dphi_cloth_triangle_dX(dX_tmp, V, F.row(ii), Eigen::Vector3d(0.,0.,0.)); //X doesn't matter since dphi is constant per element.
-    //     dX.row(ii) = Eigen::Map<Eigen::Matrix<double, 1, 9> >(dX_tmp.data());
-
-    //     //std::cout<<"dX_tmp:\n "<<dX_tmp<<"\n";
-    //     //std::cout<<"dX row: "<<dX.row(ii)<<"\n";
-        
-    //     //tmp_row = dX.row(ii);
-    //     //std::cout<<"Retrieval: \n"<<Eigen::Map<const Eigen::Matrix3d>(tmp_row.data())<<"\n";
-    //     //Heron's formula for area
-    //     double side_a = (V.row(F(ii,1)) - V.row(F(ii,0))).norm();
-    //     double side_b = (V.row(F(ii,2)) - V.row(F(ii,1))).norm();
-    //     double side_c = (V.row(F(ii,0)) - V.row(F(ii,2))).norm();
-    //     double s = (side_a+side_b+side_c)/2.;
-    //     a0(ii) = sqrt(s*(s-side_a)*(s-side_b)*(s-side_c));
-    // }
-
-    // std::vector<StretchConstraint> stretchContraints;
-    // for (int i = 0; i < E.rows(); i++) {
-
-    // }
     
     //Mass Matrix
     // mass_matrix_mesh(M, q,  V, F, density, a0);
@@ -365,8 +365,12 @@ inline void assignment_setup(int argc, char **argv, Eigen::VectorXd &q, Eigen::V
     
     //constant gravity vector
     gravity.resize(3, 1);
-    gravity << 0, -9.8, 0;
-    // dV_cloth_gravity_dq(gravity, M, Eigen::Vector3d(0,-900.8,0));
+    gravity << 0, -0.5, 0;
+
+    //constant wind vector
+    wind.resize(3, 1);
+    wind << 0, 0, 0.7;
+
 
     //std::cout<<"Gravity "<<gravity.transpose()<<"\n";
     
