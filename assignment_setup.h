@@ -14,6 +14,7 @@
 #include <visualization.h>
 #include <init_state.h>
 #include <find_max_vertices.h>
+#include <find_min_vertices.h>
 #include <fixed_point_constraints.h>
 
 #include <mass_matrix_mesh.h>
@@ -53,11 +54,14 @@ double D = YM/(2.0*(1.0+mu));
 
 //BC
 std::vector<unsigned int> fixed_point_indices;
+std::vector<unsigned int> max_point_indices;
+std::vector<unsigned int> min_point_indices;
 Eigen::SparseMatrixd P;
 Eigen::VectorXd x0; 
 
 //mass matrix
 Eigen::SparseMatrixd M; //mass matrix
+Eigen::SparseMatrixd M_orig; //mass matrix
 Eigen::VectorXd a0; //areas
 Eigen::MatrixXd dX; //dX matrices for computing deformation gradients
 
@@ -75,12 +79,41 @@ bool collision_detection_on = false;
 std::vector<unsigned int> collision_indices;
 std::vector<Eigen::Vector3d> collision_normals;
 
+bool toggle_fixed_points = false;
+bool fix_min_points = true;
+
 bool fully_implicit = false;
 
 //selection spring
 double k_selected = 1e5;
 
 inline void simulate(Eigen::VectorXd &q, Eigen::VectorXd &qdot, double dt, double t) {  
+
+    if (toggle_fixed_points) {
+        // unlock min vertices
+        // reset q, qdot
+        q = P.transpose() * q + x0;
+        qdot = P.transpose() * qdot;
+
+        fixed_point_indices = max_point_indices;
+        if(fix_min_points) {
+            fixed_point_indices.insert(fixed_point_indices.end(), min_point_indices.begin(), min_point_indices.end());
+        }
+
+        P.resize(q.rows(),q.rows());
+        P.setIdentity();
+        fixed_point_constraints(P, q.rows(), fixed_point_indices);
+        
+        x0 = q - P.transpose()*P*q; //vector x0 contains position of all fixed nodes, zero for everything else    
+        
+        //correct M, q and qdot so they are the right size
+        q = P*q;
+        qdot = P*qdot;
+        M = P*M_orig*P.transpose();
+
+        toggle_fixed_points = false;
+    }
+    
 
     double V_ele, T_ele, KE,PE;
 
@@ -166,9 +199,9 @@ inline void draw(Eigen::Ref<const Eigen::VectorXd> q, Eigen::Ref<const Eigen::Ve
 
 bool key_down_callback(igl::opengl::glfw::Viewer &viewer, unsigned char key, int modifiers) {
 
-    if(key =='N') {
-        std::cout<<"toggle integrators \n";
-        fully_implicit = !fully_implicit;
+    if(key =='F') {
+        toggle_fixed_points = true;
+        fix_min_points = !fix_min_points;
     } 
     if(key == 'C') {
         collision_detection_on = !collision_detection_on;
@@ -227,26 +260,29 @@ inline void assignment_setup(int argc, char **argv, Eigen::VectorXd &q, Eigen::V
     
     //Mass Matrix
     mass_matrix_mesh(M, q,  V, F, density, a0);
+    M_orig = M;
 
     if(M.rows() == 0) {
         std::cout<<"Mass matrix not implemented, exiting.\n";
         exit(1);
     }
+
+    //constant gravity vector
+    gravity.resize(q.rows(),1);
+    dV_cloth_gravity_dq(gravity, M, Eigen::Vector3d(0,-900.8,0));
     
     //should be max verts for cloth simulation
-    find_max_vertices(fixed_point_indices, V, 0.001);
+    find_max_vertices(max_point_indices, V, 0.001);
+    find_min_vertices(min_point_indices, V, 0.001);
+
+    fixed_point_indices.insert(fixed_point_indices.end(), max_point_indices.begin(), max_point_indices.end());
+    fixed_point_indices.insert(fixed_point_indices.end(), min_point_indices.begin(), min_point_indices.end());
     
     P.resize(q.rows(),q.rows());
     P.setIdentity();
     fixed_point_constraints(P, q.rows(), fixed_point_indices);
     
     x0 = q - P.transpose()*P*q; //vector x0 contains position of all fixed nodes, zero for everything else    
-    
-    //constant gravity vector
-    gravity.resize(q.rows(),1);
-    dV_cloth_gravity_dq(gravity, M, Eigen::Vector3d(0,-900.8,0));
-
-    //std::cout<<"Gravity "<<gravity.transpose()<<"\n";
     
     //correct M, q and qdot so they are the right size
     q = P*q;
