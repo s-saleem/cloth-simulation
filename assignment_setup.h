@@ -131,13 +131,13 @@ inline void simulate(Eigen::VectorXd &q, Eigen::VectorXd &qdot, double dt, doubl
         W[i] = wind[i % 3];// * sin(dt * M_PI) * sin(dt * M_PI);
     }
 
-    Eigen::VectorXd f = G;// + W;
+    Eigen::VectorXd f = G; //W
     for(unsigned int pickedi = 0; pickedi < spring_points.size(); pickedi++) {
         dV_spring_particle_particle_dq(dV_mouse, spring_points[pickedi].first, q.segment<3>(spring_points[pickedi].second), 0.0, k_selected_now);
         f.segment<3>(3*Visualize::picked_vertices()[pickedi]) -= dV_mouse.segment<3>(3);
     }
 
-    qdot += dt * f;// * 0;
+    qdot += dt * f  + W;// * 0;
 
     /**
      * Damp velocities
@@ -176,7 +176,7 @@ inline void simulate(Eigen::VectorXd &q, Eigen::VectorXd &qdot, double dt, doubl
         Eigen::Vector3d v = qdot.segment<3>(3*i);
         Eigen::Vector3d delta_v = cov + omega.cross(r) - v;
 
-        qdot.segment<3>(3*i) += 0.001 * delta_v;
+        qdot.segment<3>(3*i) += 0.0001 * delta_v;
     }
 
     qtmp = q + dt * qdot;
@@ -246,7 +246,7 @@ inline void simulate(Eigen::VectorXd &q, Eigen::VectorXd &qdot, double dt, doubl
         }
 
         // loop through stretch constraints
-        double stretch_stiffness = 0.2;
+        double stretch_stiffness = 0.7;
         for(int j = 0; j < E.rows(); j++) {
             int idx1 = E(j, 0);
             int idx2 = E(j, 1);
@@ -273,7 +273,7 @@ inline void simulate(Eigen::VectorXd &q, Eigen::VectorXd &qdot, double dt, doubl
             }
         }
 
-        double bend_stiffness = 1e-5;
+        double bend_stiffness = 0;
         for(int j = 0; j < TT.rows(); j++) {
             for(int k = 0; k < TT.row(j).size(); k++) {
                 if(TT(j, k) > j) {
@@ -407,7 +407,7 @@ inline void assignment_setup(int argc, char **argv, Eigen::VectorXd &q, Eigen::V
 
     //constant wind vector
     wind.resize(3, 1);
-    wind << 0, 0, 0.7;
+    wind << 0, 0, 0.001;
     
     Visualize::viewer().callback_key_down = key_down_callback;
 
