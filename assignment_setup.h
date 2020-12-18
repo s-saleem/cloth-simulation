@@ -81,6 +81,8 @@ std::vector<Eigen::Vector3d> collision_normals;
 
 bool toggle_fixed_points = false;
 bool fix_min_points = true;
+bool wind_on = true;
+bool drop = false;
 
 bool fully_implicit = false;
 
@@ -95,21 +97,26 @@ inline void simulate(Eigen::VectorXd &q, Eigen::VectorXd &qdot, double dt, doubl
         q = P.transpose() * q + x0;
         qdot = P.transpose() * qdot;
 
-        fixed_point_indices = max_point_indices;
-        if(fix_min_points) {
-            fixed_point_indices.insert(fixed_point_indices.end(), min_point_indices.begin(), min_point_indices.end());
-        }
-
         P.resize(q.rows(),q.rows());
         P.setIdentity();
-        fixed_point_constraints(P, q.rows(), fixed_point_indices);
-        
+
+        if(!drop) {
+            fixed_point_indices = max_point_indices;
+
+            if(fix_min_points) {
+                fixed_point_indices.insert(fixed_point_indices.end(), min_point_indices.begin(), min_point_indices.end());
+            }
+            
+            fixed_point_constraints(P, q.rows(), fixed_point_indices);
+        }
+
         x0 = q - P.transpose()*P*q; //vector x0 contains position of all fixed nodes, zero for everything else    
-        
+            
         //correct M, q and qdot so they are the right size
         q = P*q;
         qdot = P*qdot;
         M = P*M_orig*P.transpose();
+        
 
         toggle_fixed_points = false;
     }
@@ -186,6 +193,15 @@ inline void simulate(Eigen::VectorXd &q, Eigen::VectorXd &qdot, double dt, doubl
         velocity_filter_cloth_sphere(qdot, collision_indices, collision_normals);
     }
 
+    // add wind
+    if(wind_on) {
+        Eigen::Vector3d w;
+        w << 1, 0, 1.5;
+        for(int i = 0; i < qdot.size()/3; i++) {
+            qdot.segment<3>(3 * i) += w;
+        }
+    }
+
     q = qtmp + dt*qdot;
     //std::cout<<q.transpose()<<"\n";
 }
@@ -207,6 +223,13 @@ bool key_down_callback(igl::opengl::glfw::Viewer &viewer, unsigned char key, int
         collision_detection_on = !collision_detection_on;
         Visualize::set_visible(1, collision_detection_on);
     }
+    if(key =='W') {
+        wind_on = !wind_on;
+    } 
+    if(key =='D') {
+        toggle_fixed_points = true;
+        drop = true;
+    } 
 
     return false;
 }
@@ -276,7 +299,7 @@ inline void assignment_setup(int argc, char **argv, Eigen::VectorXd &q, Eigen::V
     find_min_vertices(min_point_indices, V, 0.001);
 
     fixed_point_indices.insert(fixed_point_indices.end(), max_point_indices.begin(), max_point_indices.end());
-    fixed_point_indices.insert(fixed_point_indices.end(), min_point_indices.begin(), min_point_indices.end());
+    if(fix_min_points) fixed_point_indices.insert(fixed_point_indices.end(), min_point_indices.begin(), min_point_indices.end());
     
     P.resize(q.rows(),q.rows());
     P.setIdentity();
