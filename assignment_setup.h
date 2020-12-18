@@ -111,7 +111,6 @@ inline void simulate(Eigen::VectorXd &q, Eigen::VectorXd &qdot, double dt, doubl
     double k_selected_now = (Visualize::is_mouse_dragging() ? k_selected : 0.);
     
     for(unsigned int pickedi = 0; pickedi < Visualize::picked_vertices().size(); pickedi++) {   
-        // spring_points.push_back(std::make_pair((P.transpose()*q+x0).segment<3>(3*Visualize::picked_vertices()[pickedi]) + Visualize::mouse_drag_world() + Eigen::Vector3d::Constant(1e-6),3*Visualize::picked_vertices()[pickedi]));
         spring_points.push_back(std::make_pair(q.segment<3>(3*Visualize::picked_vertices()[pickedi]) + Visualize::mouse_drag_world() + Eigen::Vector3d::Constant(1e-6),3*Visualize::picked_vertices()[pickedi]));
     }
 
@@ -177,7 +176,7 @@ inline void simulate(Eigen::VectorXd &q, Eigen::VectorXd &qdot, double dt, doubl
         Eigen::Vector3d v = qdot.segment<3>(3*i);
         Eigen::Vector3d delta_v = cov + omega.cross(r) - v;
 
-        qdot.segment<3>(3*i) += 0.005 * delta_v;
+        qdot.segment<3>(3*i) += 0.001 * delta_v;
     }
 
     qtmp = q + dt * qdot;
@@ -185,45 +184,46 @@ inline void simulate(Eigen::VectorXd &q, Eigen::VectorXd &qdot, double dt, doubl
     /**
      * Step 2 - generate collison constraints
      */
-    // std::vector<int> sphere_collisions;
-    // Eigen::Vector3d sphere_center = Eigen::Vector3d (0.0, 0.0, 0.4);
-    // double radius = 0.22;
-    // for(int i = 0; i < V.rows(); i++) {
-    //     Eigen::Vector3d p = qtmp.segment<3>(3*i);
+    std::vector<int> sphere_collisions;
+    Eigen::Vector3d sphere_center = Eigen::Vector3d (0.0, 0.0, 0.4);
+    double radius = 0.22;
+    if(collision_detection_on) {
+        for(int i = 0; i < V.rows(); i++) {
+            Eigen::Vector3d p = qtmp.segment<3>(3*i);
 
-    //     if((p - sphere_center).norm() <= radius) {
-    //         sphere_collisions.push_back(i);
-    //     }
-    // }
-
+            if((p - sphere_center).norm() <= radius) {
+                sphere_collisions.push_back(i);
+            }
+        } 
+    }
 
     /**
      * Step 3 - for X iterations project constraints
      */
     int solver_iterations = 1;
     for(int i = 0; i < solver_iterations; i++) {
-        // //sphere collisions
-        // for(int j = 0; j < sphere_collisions.size(); j++) {
-        //     int idx = sphere_collisions[j];
-        //     Eigen::Vector3d p1 = qtmp.segment<3>(3 * idx);
+        //sphere collisions
+        for(int j = 0; j < sphere_collisions.size(); j++) {
+            int idx = sphere_collisions[j];
+            Eigen::Vector3d p1 = qtmp.segment<3>(3 * idx);
 
-        //     Eigen::Vector3d n = (p1 - sphere_center);
-        //     n /= n.norm();
-        //     Eigen::Vector3d p2 = n * radius;
+            Eigen::Vector3d n = (p1 - sphere_center);
+            n /= n.norm();
+            Eigen::Vector3d p2 = sphere_center;
 
-        //     double l = 0;
+            double l = radius;
     
-        //     double constraint = stretch_constraint(p1, p2, l);
+            double constraint = stretch_constraint(p1, p2, l);
 
-        //     if(constraint < 0) {
-        //         Eigen::Vector6d gradient = stretch_constraint_gradient(p1, p2);
+            if(constraint < 0) {
+                Eigen::Vector6d gradient = stretch_constraint_gradient(p1, p2);
 
-        //         // -2 because only p1 will move
-        //         Eigen::Vector6d delta_p = -2 * constraint / (gradient.norm() * gradient.norm()) * gradient;
+                // -2 because only p1 will move
+                Eigen::Vector6d delta_p = -constraint / (gradient.norm() * gradient.norm()) * gradient;
                 
-        //         qtmp.segment<3>(3 * idx) += delta_p.segment<3>(0);
-        //     }
-        // }
+                qtmp.segment<3>(3 * idx) += delta_p.segment<3>(0);
+            }
+        }
 
         // fixed point constraints
         for(int j = 0; j < fixed_point_indices.size(); j++) {
@@ -235,7 +235,7 @@ inline void simulate(Eigen::VectorXd &q, Eigen::VectorXd &qdot, double dt, doubl
             double l = 0.0;
     
             double constraint = stretch_constraint(p1, p2, l);
-            if(constraint > 0) {
+            if(constraint > 1e-8) {
                 Eigen::Vector6d gradient = stretch_constraint_gradient(p1, p2);
 
                 // -2 because only p1 will move
@@ -246,7 +246,7 @@ inline void simulate(Eigen::VectorXd &q, Eigen::VectorXd &qdot, double dt, doubl
         }
 
         // loop through stretch constraints
-        double stretch_stiffness = 0.7;
+        double stretch_stiffness = 0.2;
         for(int j = 0; j < E.rows(); j++) {
             int idx1 = E(j, 0);
             int idx2 = E(j, 1);
@@ -273,7 +273,7 @@ inline void simulate(Eigen::VectorXd &q, Eigen::VectorXd &qdot, double dt, doubl
             }
         }
 
-        double bend_stiffness = 0.8;
+        double bend_stiffness = 1e-5;
         for(int j = 0; j < TT.rows(); j++) {
             for(int k = 0; k < TT.row(j).size(); k++) {
                 if(TT(j, k) > j) {
@@ -331,7 +331,6 @@ inline void simulate(Eigen::VectorXd &q, Eigen::VectorXd &qdot, double dt, doubl
 inline void draw(Eigen::Ref<const Eigen::VectorXd> q, Eigen::Ref<const Eigen::VectorXd> qdot, double t) {
 
     //update vertex positions using simulation
-    // Visualize::update_vertex_positions(0, P.transpose()*q + x0);
     Visualize::update_vertex_positions(0, q);
 
 }
@@ -382,7 +381,6 @@ inline void assignment_setup(int argc, char **argv, Eigen::VectorXd &q, Eigen::V
     Visualize::set_visible(1, collision_detection_on);
     
     //Mass Matrix
-    // mass_matrix_mesh(M, q,  V, F, density, a0);
     mass_vector(M, q, V, F, density);
 
     if(M.size() == 0) {
@@ -392,15 +390,6 @@ inline void assignment_setup(int argc, char **argv, Eigen::VectorXd &q, Eigen::V
     
     //should be max verts for cloth simulation
     find_max_vertices(fixed_point_indices, V, 0.001);
-    // int edges = E.rows();
-    // E.conservativeResize(E.rows() + fixed_point_indices.size(), E.cols());
-    // l0.conservativeResize(l0.rows() + fixed_point_indices.size());
-    // for(int i = 0; i < fixed_point_indices.size(); i++) {
-    //     E(edges + i, 0) = fixed_point_indices[i];
-    //     E(edges + i, 1) = fixed_point_indices[i];
-    //     l0(edges + i) = 0.0;
-        
-    // }
     
     P.resize(q.rows(),q.rows());
     P.setIdentity();
@@ -419,14 +408,6 @@ inline void assignment_setup(int argc, char **argv, Eigen::VectorXd &q, Eigen::V
     //constant wind vector
     wind.resize(3, 1);
     wind << 0, 0, 0.7;
-
-
-    //std::cout<<"Gravity "<<gravity.transpose()<<"\n";
-    
-    //correct M, q and qdot so they are the right size
-    // q = P*q;
-    // qdot = P*qdot;
-    // M = P*M;
     
     Visualize::viewer().callback_key_down = key_down_callback;
 
