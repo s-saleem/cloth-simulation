@@ -17,26 +17,12 @@
 #include <igl/triangle_triangle_adjacency.h>
 #include <init_state.h>
 #include <find_max_vertices.h>
+#include <find_min_vertices.h>
 #include <fixed_point_constraints.h>
 
-#include <mass_matrix_mesh.h>
-#include <linearly_implicit_euler.h>
-#include <dsvd.h>
-
-#include <dphi_cloth_triangle_dX.h>
-#include <T_cloth.h>
-#include <V_membrane_corotational.h>
-#include <dV_membrane_corotational_dq.h>
-#include <d2V_membrane_corotational_dq2.h>
-#include <dV_cloth_gravity_dq.h>
 #include <V_spring_particle_particle.h>
 #include <dV_spring_particle_particle_dq.h>
-#include <assemble_forces.h>
-#include <assemble_stiffness.h>
 
-//collision detection stuff
-#include <collision_detection_cloth_sphere.h>
-#include <velocity_filter_cloth_sphere.h>
 
 #include <mass_vector.h>
 #include <stretch_constraint.h>
@@ -64,10 +50,8 @@ Eigen::SparseMatrixd N;
 
 //material parameters
 double density = 1;
-double YM = 1e6; //young's modulus
-double mu = 0.4; //poissons ratio
-double C = (YM*mu)/((1.0+mu)*(1.0-2.0*mu));
-double D = YM/(2.0*(1.0+mu));
+double stretch_stiffness = 0.7;
+double bend_stiffness = 0;
 
 //BC
 std::vector<unsigned int> fixed_point_indices;
@@ -246,7 +230,6 @@ inline void simulate(Eigen::VectorXd &q, Eigen::VectorXd &qdot, double dt, doubl
         }
 
         // loop through stretch constraints
-        double stretch_stiffness = 0.7;
         for(int j = 0; j < E.rows(); j++) {
             int idx1 = E(j, 0);
             int idx2 = E(j, 1);
@@ -273,7 +256,6 @@ inline void simulate(Eigen::VectorXd &q, Eigen::VectorXd &qdot, double dt, doubl
             }
         }
 
-        double bend_stiffness = 0;
         for(int j = 0; j < TT.rows(); j++) {
             for(int k = 0; k < TT.row(j).size(); k++) {
                 if(TT(j, k) > j) {
