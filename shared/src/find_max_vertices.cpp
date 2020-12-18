@@ -17,8 +17,8 @@ void find_max_vertices(std::vector<unsigned int> &indices, Eigen::Ref<const Eige
             indices.push_back(vi);
         }
 
-        if(std::abs(V(vi,1)-min_vertex) <= tol ) {
-            indices.push_back(vi);
-        }
+        // if(std::abs(V(vi,1)-min_vertex) <= tol ) {
+        //     indices.push_back(vi);
+        // }
     }
 }

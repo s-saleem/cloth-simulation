@@ -132,18 +132,69 @@ inline void simulate(Eigen::VectorXd &q, Eigen::VectorXd &qdot, double dt, doubl
         W[i] = wind[i % 3];// * sin(dt * M_PI) * sin(dt * M_PI);
     }
 
-    Eigen::VectorXd f = G + W;
+    Eigen::VectorXd f = G;// + W;
     for(unsigned int pickedi = 0; pickedi < spring_points.size(); pickedi++) {
         dV_spring_particle_particle_dq(dV_mouse, spring_points[pickedi].first, q.segment<3>(spring_points[pickedi].second), 0.0, k_selected_now);
         f.segment<3>(3*Visualize::picked_vertices()[pickedi]) -= dV_mouse.segment<3>(3);
     }
 
     qdot += dt * f;// * 0;
+
+    /**
+     * Damp velocities
+     */
+    Eigen::Vector3d com = Eigen::Vector3d::Zero();
+    Eigen::Vector3d cov = Eigen::Vector3d::Zero();
+    double mass = 0;
+    for(int i = 0; i < V.rows(); i++) {
+        mass += M(i);
+        com += q.segment<3>(3*i) * M(i);
+        cov += qdot.segment<3>(3*i) * M(i);
+    }
+    com /= mass;
+    cov /= mass;
+
+    Eigen::Vector3d L = Eigen::Vector3d::Zero();
+    Eigen::Matrix3d I = Eigen::Matrix3d::Zero();
+    for(int i = 0; i < V.rows(); i++) {
+        Eigen::Vector3d r = q.segment<3>(3*i) - com;
+        Eigen::Vector3d v = qdot.segment<3>(3*i);
+
+        L += r.cross(M(i) * v);
+
+        Eigen::Matrix3d r_skew;
+        r_skew << 0, -r.z(), r.y(),
+                r.z(), 0, -r.x(),
+                -r.y(), r.x(), 0;
+
+        I += r_skew * r_skew.transpose() * M(i);
+    }
+
+    Eigen::Vector3d omega = I.inverse() * L;
+
+    for(int i = 0; i < V.rows(); i++) {
+        Eigen::Vector3d r = q.segment<3>(3*i) - com;
+        Eigen::Vector3d v = qdot.segment<3>(3*i);
+        Eigen::Vector3d delta_v = cov + omega.cross(r) - v;
+
+        qdot.segment<3>(3*i) += 0.005 * delta_v;
+    }
+
     qtmp = q + dt * qdot;
 
     /**
      * Step 2 - generate collison constraints
      */
+    // std::vector<int> sphere_collisions;
+    // Eigen::Vector3d sphere_center = Eigen::Vector3d (0.0, 0.0, 0.4);
+    // double radius = 0.22;
+    // for(int i = 0; i < V.rows(); i++) {
+    //     Eigen::Vector3d p = qtmp.segment<3>(3*i);
+
+    //     if((p - sphere_center).norm() <= radius) {
+    //         sphere_collisions.push_back(i);
+    //     }
+    // }
 
 
     /**
@@ -151,6 +202,29 @@ inline void simulate(Eigen::VectorXd &q, Eigen::VectorXd &qdot, double dt, doubl
      */
     int solver_iterations = 1;
     for(int i = 0; i < solver_iterations; i++) {
+        // //sphere collisions
+        // for(int j = 0; j < sphere_collisions.size(); j++) {
+        //     int idx = sphere_collisions[j];
+        //     Eigen::Vector3d p1 = qtmp.segment<3>(3 * idx);
+
+        //     Eigen::Vector3d n = (p1 - sphere_center);
+        //     n /= n.norm();
+        //     Eigen::Vector3d p2 = n * radius;
+
+        //     double l = 0;
+    
+        //     double constraint = stretch_constraint(p1, p2, l);
+
+        //     if(constraint < 0) {
+        //         Eigen::Vector6d gradient = stretch_constraint_gradient(p1, p2);
+
+        //         // -2 because only p1 will move
+        //         Eigen::Vector6d delta_p = -2 * constraint / (gradient.norm() * gradient.norm()) * gradient;
+                
+        //         qtmp.segment<3>(3 * idx) += delta_p.segment<3>(0);
+        //     }
+        // }
+
         // fixed point constraints
         for(int j = 0; j < fixed_point_indices.size(); j++) {
 
@@ -158,7 +232,7 @@ inline void simulate(Eigen::VectorXd &q, Eigen::VectorXd &qdot, double dt, doubl
             Eigen::Vector3d p1 = qtmp.segment<3>(3 * idx);
             Eigen::Vector3d p2 = V.row(idx);
 
-            double l = 0;
+            double l = 0.0;
     
             double constraint = stretch_constraint(p1, p2, l);
             if(constraint > 0) {
@@ -172,7 +246,7 @@ inline void simulate(Eigen::VectorXd &q, Eigen::VectorXd &qdot, double dt, doubl
         }
 
         // loop through stretch constraints
-        double stretch_stiffness = 0.001;
+        double stretch_stiffness = 0.7;
         for(int j = 0; j < E.rows(); j++) {
             int idx1 = E(j, 0);
             int idx2 = E(j, 1);
@@ -191,25 +265,15 @@ inline void simulate(Eigen::VectorXd &q, Eigen::VectorXd &qdot, double dt, doubl
                 // keep k linear with iterations (only 1 iteration works right now)
                 double k = 1 - pow(1 - stretch_stiffness, 1 / solver_iterations);
 
-                // dont't move fixed points and double the movement of their adjacent non-fixed points
-                double w1 = 1;
-                double w2 = 1;
-                for(int k = 0; k < fixed_point_indices.size(); k++) {
-                    int idx = fixed_point_indices[k];
-                    if(idx == idx1) w1 = 0;
-                    if(idx == idx2) w2 = 0;
-                }
-                if(w1 != w2) {
-                    w1 *= 2;
-                    w2 *= 2;
-                }
+                double w1 = 1 / M(idx1);
+                double w2 = 1 / M(idx2);
 
-                qtmp.segment<3>(3 * idx1) += w1 * k * delta_p.segment<3>(0);
-                qtmp.segment<3>(3 * idx2) += w2 * k * delta_p.segment<3>(3);
+                qtmp.segment<3>(3 * idx1) += w1 / (w1 + w2) * k * delta_p.segment<3>(0);
+                qtmp.segment<3>(3 * idx2) += w2 / (w1 + w2) * k * delta_p.segment<3>(3);
             }
         }
 
-        double bend_stiffness = 0.001;
+        double bend_stiffness = 0.8;
         for(int j = 0; j < TT.rows(); j++) {
             for(int k = 0; k < TT.row(j).size(); k++) {
                 if(TT(j, k) > j) {
@@ -239,10 +303,15 @@ inline void simulate(Eigen::VectorXd &q, Eigen::VectorXd &qdot, double dt, doubl
                         // keep k linear with iterations (only 1 iteration works right now)
                         double k = 1 - pow(1 - bend_stiffness, 1 / solver_iterations);
 
-                        qtmp.segment<3>(3 * idx1) += k * delta_p.segment<3>(0);
-                        qtmp.segment<3>(3 * idx2) += k * delta_p.segment<3>(3);
-                        qtmp.segment<3>(3 * idx3) += k * delta_p.segment<3>(6);
-                        qtmp.segment<3>(3 * idx4) += k * delta_p.segment<3>(9);
+                        double w1 = 1 / M(idx1);
+                        double w2 = 1 / M(idx2);
+                        double w3 = 1 / M(idx3);
+                        double w4 = 1 / M(idx4);
+
+                        qtmp.segment<3>(3 * idx1) += 4 * w1 / (w1 + w2 + w3 + w4) * k * delta_p.segment<3>(0);
+                        qtmp.segment<3>(3 * idx2) += 4 * w2 / (w1 + w2 + w3 + w4) * k * delta_p.segment<3>(3);
+                        qtmp.segment<3>(3 * idx3) += 4 * w3 / (w1 + w2 + w3 + w4) * k * delta_p.segment<3>(6);
+                        qtmp.segment<3>(3 * idx4) += 4 * w4 / (w1 + w2 + w3 + w4) * k * delta_p.segment<3>(9);
                     }
                 }
             }
@@ -336,12 +405,16 @@ inline void assignment_setup(int argc, char **argv, Eigen::VectorXd &q, Eigen::V
     P.resize(q.rows(),q.rows());
     P.setIdentity();
     fixed_point_constraints(P, q.rows(), fixed_point_indices);
+
+    for(int i = 0; i < fixed_point_indices.size(); i++) {
+        M(fixed_point_indices[i]) = 999.0;
+    }
     
     x0 = q - P.transpose()*P*q; //vector x0 contains position of all fixed nodes, zero for everything else    
     
     //constant gravity vector
     gravity.resize(3, 1);
-    gravity << 0, -0.5, 0;
+    gravity << 0, -9.5, 0;
 
     //constant wind vector
     wind.resize(3, 1);
