@@ -50,13 +50,14 @@ Eigen::SparseMatrixd N;
 
 //material parameters
 double density = 1;
-double stretch_stiffness = 0.7;
-double bend_stiffness = 0;
+double stretch_stiffness = 0.1;
+double bend_stiffness = 0.000;
+double v_damping = 0.0001;
 
 //BC
 std::vector<unsigned int> fixed_point_indices;
-Eigen::SparseMatrixd P;
-Eigen::VectorXd x0; 
+std::vector<unsigned int> max_point_indices;
+std::vector<unsigned int> min_point_indices;
 
 //mass matrix
 Eigen::VectorXd M; //mass vector
@@ -78,7 +79,11 @@ bool collision_detection_on = false;
 std::vector<unsigned int> collision_indices;
 std::vector<Eigen::Vector3d> collision_normals;
 
-bool fully_implicit = false;
+bool toggle_fixed_points = false;
+bool fix_min_vertices = true;
+bool drop = false;
+bool wind_on = true;
+bool damping = true;
 
 //selection spring
 double k_selected = 1e5;
@@ -97,7 +102,6 @@ inline void simulate(Eigen::VectorXd &q, Eigen::VectorXd &qdot, double dt, doubl
     for(unsigned int pickedi = 0; pickedi < Visualize::picked_vertices().size(); pickedi++) {   
         spring_points.push_back(std::make_pair(q.segment<3>(3*Visualize::picked_vertices()[pickedi]) + Visualize::mouse_drag_world() + Eigen::Vector3d::Constant(1e-6),3*Visualize::picked_vertices()[pickedi]));
     }
-
 
     /**
      * Step 1 - update velocity for external force not described in constraints
@@ -121,55 +125,75 @@ inline void simulate(Eigen::VectorXd &q, Eigen::VectorXd &qdot, double dt, doubl
         f.segment<3>(3*Visualize::picked_vertices()[pickedi]) -= dV_mouse.segment<3>(3);
     }
 
-    qdot += dt * f  + W;// * 0;
+    qdot += dt * f; 
+    if(wind_on) qdot += W;
 
     /**
      * Damp velocities
      */
-    Eigen::Vector3d com = Eigen::Vector3d::Zero();
-    Eigen::Vector3d cov = Eigen::Vector3d::Zero();
-    double mass = 0;
-    for(int i = 0; i < V.rows(); i++) {
-        mass += M(i);
-        com += q.segment<3>(3*i) * M(i);
-        cov += qdot.segment<3>(3*i) * M(i);
-    }
-    com /= mass;
-    cov /= mass;
+    if(damping) {
+        Eigen::Vector3d com = Eigen::Vector3d::Zero();
+        Eigen::Vector3d cov = Eigen::Vector3d::Zero();
+        double mass = 0;
+        for(int i = 0; i < V.rows(); i++) {
+            mass += M(i);
+            com += q.segment<3>(3*i) * M(i);
+            cov += qdot.segment<3>(3*i) * M(i);
+        }
+        com /= mass;
+        cov /= mass;
 
-    Eigen::Vector3d L = Eigen::Vector3d::Zero();
-    Eigen::Matrix3d I = Eigen::Matrix3d::Zero();
-    for(int i = 0; i < V.rows(); i++) {
-        Eigen::Vector3d r = q.segment<3>(3*i) - com;
-        Eigen::Vector3d v = qdot.segment<3>(3*i);
+        Eigen::Vector3d L = Eigen::Vector3d::Zero();
+        Eigen::Matrix3d I = Eigen::Matrix3d::Zero();
+        for(int i = 0; i < V.rows(); i++) {
+            Eigen::Vector3d r = q.segment<3>(3*i) - com;
+            Eigen::Vector3d v = qdot.segment<3>(3*i);
 
-        L += r.cross(M(i) * v);
+            L += r.cross(M(i) * v);
 
-        Eigen::Matrix3d r_skew;
-        r_skew << 0, -r.z(), r.y(),
-                r.z(), 0, -r.x(),
-                -r.y(), r.x(), 0;
+            Eigen::Matrix3d r_skew;
+            r_skew << 0, -r.z(), r.y(),
+                    r.z(), 0, -r.x(),
+                    -r.y(), r.x(), 0;
 
-        I += r_skew * r_skew.transpose() * M(i);
-    }
+            I += r_skew * r_skew.transpose() * M(i);
+        }
 
-    Eigen::Vector3d omega = I.inverse() * L;
+        Eigen::Vector3d omega = I.inverse() * L;
 
-    for(int i = 0; i < V.rows(); i++) {
-        Eigen::Vector3d r = q.segment<3>(3*i) - com;
-        Eigen::Vector3d v = qdot.segment<3>(3*i);
-        Eigen::Vector3d delta_v = cov + omega.cross(r) - v;
+        for(int i = 0; i < V.rows(); i++) {
+            Eigen::Vector3d r = q.segment<3>(3*i) - com;
+            Eigen::Vector3d v = qdot.segment<3>(3*i);
+            Eigen::Vector3d delta_v = cov + omega.cross(r) - v;
 
-        qdot.segment<3>(3*i) += 0.0001 * delta_v;
+            qdot.segment<3>(3*i) += v_damping * delta_v;
+        }
     }
 
     qtmp = q + dt * qdot;
 
     /**
-     * Step 2 - generate collison constraints
+     * Step 2 - generate collison and (if needed fixed points) constraints
      */
+    if(toggle_fixed_points) {
+        fixed_point_indices.clear();
+        if(!drop) {
+            fixed_point_indices = max_point_indices;
+            if(fix_min_vertices) {
+                fixed_point_indices.insert(fixed_point_indices.begin(), min_point_indices.begin(), min_point_indices.end());
+            }
+        }
+
+        mass_vector(M, q, V, F, density);
+        for(int i = 0; i < fixed_point_indices.size(); i++) {
+            M(fixed_point_indices[i]) = 999.0;
+        } 
+
+        toggle_fixed_points = false;
+    }
+
     std::vector<int> sphere_collisions;
-    Eigen::Vector3d sphere_center = Eigen::Vector3d (0.0, 0.0, 0.4);
+    Eigen::Vector3d sphere_center = Eigen::Vector3d(0.0, 0.0, 0.4);
     double radius = 0.22;
     if(collision_detection_on) {
         for(int i = 0; i < V.rows(); i++) {
@@ -319,13 +343,23 @@ inline void draw(Eigen::Ref<const Eigen::VectorXd> q, Eigen::Ref<const Eigen::Ve
 
 bool key_down_callback(igl::opengl::glfw::Viewer &viewer, unsigned char key, int modifiers) {
 
-    if(key =='N') {
-        std::cout<<"toggle integrators \n";
-        fully_implicit = !fully_implicit;
+    if(key =='F') {
+        toggle_fixed_points = true;
+        fix_min_vertices = !fix_min_vertices;
     } 
     if(key == 'C') {
         collision_detection_on = !collision_detection_on;
         Visualize::set_visible(1, collision_detection_on);
+    }
+    if(key == 'D') {
+        toggle_fixed_points = true;
+        drop = true;
+    }
+    if(key == 'Q') {
+        wind_on = !wind_on;
+    }
+    if(key == 'V') {
+        damping = !damping;
     }
 
     return false;
@@ -371,21 +405,21 @@ inline void assignment_setup(int argc, char **argv, Eigen::VectorXd &q, Eigen::V
     }
     
     //should be max verts for cloth simulation
-    find_max_vertices(fixed_point_indices, V, 0.001);
-    
-    P.resize(q.rows(),q.rows());
-    P.setIdentity();
-    fixed_point_constraints(P, q.rows(), fixed_point_indices);
+    find_max_vertices(max_point_indices, V, 0.001);
+    find_min_vertices(min_point_indices, V, 0.001);
+
+    fixed_point_indices = max_point_indices;
+    if(fix_min_vertices) {
+        fixed_point_indices.insert(fixed_point_indices.end(), min_point_indices.begin(), min_point_indices.end());
+    }
 
     for(int i = 0; i < fixed_point_indices.size(); i++) {
         M(fixed_point_indices[i]) = 999.0;
     }
     
-    x0 = q - P.transpose()*P*q; //vector x0 contains position of all fixed nodes, zero for everything else    
-    
     //constant gravity vector
     gravity.resize(3, 1);
-    gravity << 0, -9.5, 0;
+    gravity << 0, -9.8, 0;
 
     //constant wind vector
     wind.resize(3, 1);
