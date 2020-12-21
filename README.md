@@ -1,5 +1,8 @@
 ## Introduction
 
+## .zip file
+The project can be dowloaded from this link: https://drive.google.com/file/d/1fWKAY_qvbnGST6dbYW5_pvljXFV8e-gF/view?usp=sharing
+
 ## Compilation
 Starting in this directory, issue:
 
@@ -21,6 +24,10 @@ While running, you can activate or de-activate the collision sphere by pressing 
 Toggle wind effect using `w`.
 `f` can be used to toggle fixing the bottom of the cloth.
 `d` can be used to drop the cloth completely.
+
+## Material parameters
+
+`sterch_stffness` and `bend_stiffness` can be changed in `assignment_setup.h`
 
 ## Video
 
