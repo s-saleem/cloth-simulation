@@ -49,9 +49,9 @@ Eigen::MatrixXi F_sphere, F_sphere_skin; //faces of simulation mesh
 Eigen::SparseMatrixd N;
 
 //material parameters
-double density = 1;
+double density = 1.0;
 double stretch_stiffness = 0.1;
-double bend_stiffness = 0.000;
+double bend_stiffness = 0.0;
 double v_damping = 0.0001;
 
 //BC
@@ -61,6 +61,7 @@ std::vector<unsigned int> min_point_indices;
 
 //mass matrix
 Eigen::VectorXd M; //mass vector
+Eigen::VectorXd M_orig; //mass vector
 Eigen::VectorXd a0; //areas
 Eigen::MatrixXd dX; //dX matrices for computing deformation gradients
 
@@ -80,9 +81,9 @@ std::vector<unsigned int> collision_indices;
 std::vector<Eigen::Vector3d> collision_normals;
 
 bool toggle_fixed_points = false;
-bool fix_min_vertices = true;
+bool fix_min_vertices = false;
 bool drop = false;
-bool wind_on = true;
+bool wind_on = false;
 bool damping = true;
 
 //selection spring
@@ -105,21 +106,20 @@ inline void simulate(Eigen::VectorXd &q, Eigen::VectorXd &qdot, double dt, doubl
 
     /**
      * Step 1 - update velocity for external force not described in constraints
-     * gravity - v_i += dt * g
      */
     Eigen::VectorXd G(qdot.size());
     
-    for(int i = 0; i < qdot.size(); i++) {
-        G[i] = gravity[i % 3];
+    for(int i = 0; i < V.rows(); i++) {
+        G.segment<3>(3 * i) = gravity;
     }
 
     Eigen::VectorXd W(qdot.size());
     
     for(int i = 0; i < qdot.size(); i++) {
-        W[i] = wind[i % 3];// * sin(dt * M_PI) * sin(dt * M_PI);
+        W[i] = wind[i % 3];
     }
 
-    Eigen::VectorXd f = G; //W
+    Eigen::VectorXd f = G;
     for(unsigned int pickedi = 0; pickedi < spring_points.size(); pickedi++) {
         dV_spring_particle_particle_dq(dV_mouse, spring_points[pickedi].first, q.segment<3>(spring_points[pickedi].second), 0.0, k_selected_now);
         f.segment<3>(3*Visualize::picked_vertices()[pickedi]) -= dV_mouse.segment<3>(3);
@@ -175,6 +175,7 @@ inline void simulate(Eigen::VectorXd &q, Eigen::VectorXd &qdot, double dt, doubl
     /**
      * Step 2 - generate collison and (if needed fixed points) constraints
      */
+    // setup fixed points
     if(toggle_fixed_points) {
         fixed_point_indices.clear();
         if(!drop) {
@@ -184,7 +185,7 @@ inline void simulate(Eigen::VectorXd &q, Eigen::VectorXd &qdot, double dt, doubl
             }
         }
 
-        mass_vector(M, q, V, F, density);
+        M = M_orig;
         for(int i = 0; i < fixed_point_indices.size(); i++) {
             M(fixed_point_indices[i]) = 999.0;
         } 
@@ -244,12 +245,11 @@ inline void simulate(Eigen::VectorXd &q, Eigen::VectorXd &qdot, double dt, doubl
     
             double constraint = stretch_constraint(p1, p2, l);
             if(constraint > 1e-8) {
-                Eigen::Vector6d gradient = stretch_constraint_gradient(p1, p2);
+                Eigen::Vector3d gradient = stretch_constraint_gradient(p1, p2).segment<3>(0);
 
-                // -2 because only p1 will move
-                Eigen::Vector6d delta_p = -2 * constraint / (gradient.norm() * gradient.norm()) * gradient;
+                Eigen::Vector3d delta_p = -constraint / (gradient.norm() * gradient.norm()) * gradient;
                 
-                qtmp.segment<3>(3 * idx) += delta_p.segment<3>(0);
+                qtmp.segment<3>(3 * idx) += delta_p;
             }
         }
 
@@ -280,6 +280,7 @@ inline void simulate(Eigen::VectorXd &q, Eigen::VectorXd &qdot, double dt, doubl
             }
         }
 
+        // bending comnstraints
         for(int j = 0; j < TT.rows(); j++) {
             for(int k = 0; k < TT.row(j).size(); k++) {
                 if(TT(j, k) > j) {
@@ -398,6 +399,7 @@ inline void assignment_setup(int argc, char **argv, Eigen::VectorXd &q, Eigen::V
     
     //Mass Matrix
     mass_vector(M, q, V, F, density);
+    M_orig = M;
 
     if(M.size() == 0) {
         std::cout<<"Mass vector not implemented, exiting.\n";
@@ -414,7 +416,7 @@ inline void assignment_setup(int argc, char **argv, Eigen::VectorXd &q, Eigen::V
     }
 
     for(int i = 0; i < fixed_point_indices.size(); i++) {
-        M(fixed_point_indices[i]) = 999.0;
+        M(fixed_point_indices[i]) = 1e8;
     }
     
     //constant gravity vector
@@ -423,7 +425,7 @@ inline void assignment_setup(int argc, char **argv, Eigen::VectorXd &q, Eigen::V
 
     //constant wind vector
     wind.resize(3, 1);
-    wind << 0, 0, 0.001;
+    wind << 0.0005, 0, 0.001;
     
     Visualize::viewer().callback_key_down = key_down_callback;
 
