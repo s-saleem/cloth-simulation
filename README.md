@@ -1,7 +1,10 @@
 ## Introduction
 
-## .zip file
+## full project .zip file
 The project can be dowloaded from this link: https://drive.google.com/file/d/1fWKAY_qvbnGST6dbYW5_pvljXFV8e-gF/view?usp=sharing
+
+## External dependecies
+- libigl: https://libigl.github.io/
 
 ## Compilation
 Starting in this directory, issue:
