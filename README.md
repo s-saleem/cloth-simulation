@@ -31,6 +31,6 @@ Toggle wind effect using `w`.
 
 ## Video
 
-A video of the results can be found here: https://youtu.be/E0S3BfkH8nM
+A video of the results is available here: https://youtu.be/E0S3BfkH8nM
 
 
